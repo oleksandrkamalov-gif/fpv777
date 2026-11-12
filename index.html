@@ -1,0 +1,2702 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FPV DRONE PRO SIMULATOR 3D — Реалістичний Симулятор Польоту</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js r128 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Google Fonts: JetBrains Mono & Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #060a12;
+            font-family: 'Inter', sans-serif;
+            color: #f8fafc;
+        }
+        .font-mono-osd {
+            font-family: 'JetBrains Mono', monospace;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.8);
+        }
+        #canvas-container {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* FPV Camera Optical Effects */
+        .fpv-vignette {
+            background: radial-gradient(circle at center, transparent 60%, rgba(0, 0, 0, 0.42) 88%, rgba(0, 0, 0, 0.85) 100%);
+            pointer-events: none;
+        }
+        .fpv-scanlines {
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.18) 50%
+            ), linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.02),
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 0, 255, 0.02)
+            );
+            background-size: 100% 3px, 6px 100%;
+            pointer-events: none;
+        }
+        /* Pro Studio Glassmorphism */
+        .studio-panel {
+            background: rgba(9, 14, 26, 0.82);
+            backdrop-filter: blur(22px);
+            -webkit-backdrop-filter: blur(22px);
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+        .select-card {
+            transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            background: rgba(15, 23, 42, 0.65);
+        }
+        .select-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(56, 189, 248, 0.55);
+            background: rgba(15, 23, 42, 0.85);
+        }
+        .select-card.active {
+            border-color: #38bdf8;
+            background: linear-gradient(145deg, rgba(14, 165, 233, 0.24), rgba(15, 23, 42, 0.92));
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.3);
+        }
+        /* Custom Scrollbar for Menu Grid */
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.4);
+            border-radius: 999px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: rgba(56, 189, 248, 0.4);
+            border-radius: 999px;
+        }
+        /* Virtual Dual Sticks */
+        .stick-base {
+            width: 114px;
+            height: 114px;
+            border-radius: 9999px;
+            background: radial-gradient(circle, rgba(15, 23, 42, 0.55) 0%, rgba(15, 23, 42, 0.85) 100%);
+            border: 2px solid rgba(56, 189, 248, 0.35);
+            box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.7), 0 4px 15px rgba(0, 0, 0, 0.4);
+            position: relative;
+            touch-action: none;
+        }
+        .stick-knob {
+            width: 42px;
+            height: 42px;
+            border-radius: 9999px;
+            background: radial-gradient(circle at 35% 35%, #38bdf8, #0284c7);
+            border: 2px solid #e0f2fe;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.7);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        input[type=range] {
+            -webkit-appearance: none;
+            background: rgba(30, 41, 59, 0.95);
+            height: 6px;
+            border-radius: 999px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #38bdf8;
+            cursor: pointer;
+            box-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+        }
+        @keyframes pulseGlow {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.45; }
+        }
+        .animate-osd-warn {
+            animation: pulseGlow 0.9s infinite;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 3D WebGL Viewport -->
+    <div id="canvas-container"></div>
+
+    <!-- FPV Camera Lens Effects -->
+    <div id="fpv-vignette" class="fixed inset-0 z-10 fpv-vignette"></div>
+    <div id="fpv-scanlines" class="fixed inset-0 z-10 fpv-scanlines opacity-45"></div>
+
+    <!-- BETAFLIGHT STYLE FPV OSD OVERLAY -->
+    <div id="fpv-hud" class="fixed inset-0 z-20 pointer-events-none flex flex-col justify-between p-3 sm:p-5 font-mono-osd">
+        
+        <!-- Top OSD Bar -->
+        <div class="flex items-start justify-between w-full">
+            <!-- Top Left: Battery, Voltage, Current, Drone Specs -->
+            <div class="flex flex-col gap-1 text-xs sm:text-sm">
+                <div class="flex items-center gap-2 bg-black/40 px-2.5 py-1 rounded-lg border border-white/10">
+                    <span class="text-emerald-400 font-bold">🔋</span>
+                    <span id="osd-voltage" class="text-white font-bold tracking-wider">25.2V</span>
+                    <span id="osd-bat-cells" class="text-slate-400 text-[11px]">(6S)</span>
+                    <span id="osd-amps" class="text-sky-300 ml-1">18.4A</span>
+                </div>
+                <div class="flex items-center gap-3 text-[11px] sm:text-xs text-slate-200 px-1 flex-wrap">
+                    <span>LQ <span class="text-emerald-400 font-semibold">100%</span></span>
+                    <span id="osd-cam-angle" class="text-amber-300">CAM 25°</span>
+                    <span id="osd-drone-model" class="text-sky-400 font-bold">APEX 5"</span>
+                    <span id="osd-diff-badge" class="text-purple-300 font-semibold">[СТАНДАРТ]</span>
+                </div>
+            </div>
+
+            <!-- Top Center: Compass & Race Banner -->
+            <div class="hidden sm:flex flex-col items-center">
+                <div class="bg-black/45 border border-white/15 rounded-lg px-4 py-1 flex items-center gap-3 text-xs">
+                    <span class="text-slate-400">NW</span>
+                    <span class="text-sky-400 font-bold text-sm" id="osd-heading">000° N</span>
+                    <span class="text-slate-400">NE</span>
+                </div>
+                <div id="osd-race-banner" class="hidden mt-1.5 bg-sky-950/85 border border-sky-400/50 px-3.5 py-1 rounded-full text-xs text-sky-200 font-bold tracking-wide shadow-lg">
+                    КІЛЬЦЯ: <span id="osd-gate-count" class="text-white">0 / 22</span> &bull; ЧАС: <span id="osd-race-time" class="text-amber-300">0.0с</span> &bull; ДО НАСТ.: <span id="osd-next-gate-dist" class="text-cyan-300">0м</span> <span id="osd-best-time" class="text-emerald-300 ml-1"></span>
+                </div>
+            </div>
+
+            <!-- Top Right: Interactive Quick Buttons -->
+            <div class="flex flex-col items-end gap-1.5 pointer-events-auto">
+                <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
+                    <button id="btn-toggle-smoke" title="Акробатичний кольоровий дим (C)" class="bg-slate-900/80 hover:bg-fuchsia-600/80 active:scale-95 text-white border border-fuchsia-400/40 px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-lg">
+                        💨 ДИМ (C)
+                    </button>
+                    <button id="btn-toggle-cinema" title="Чистий екран кінозйомки (H)" class="bg-slate-900/80 hover:bg-indigo-600/80 active:scale-95 text-white border border-indigo-400/40 px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-lg">
+                        🎥 КІНО (H)
+                    </button>
+                    <button id="btn-toggle-mode" title="Змінити режим польоту (M)" class="bg-slate-900/80 hover:bg-sky-600/80 active:scale-95 text-white border border-sky-400/40 px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-lg">
+                        РЕЖИМ: <span id="btn-mode-label" class="text-sky-300">ANGLE</span>
+                    </button>
+                    <button id="btn-reset-drone" title="Скинути дрон та зарядити батарею (R)" class="bg-slate-900/80 hover:bg-emerald-600/80 active:scale-95 text-white border border-white/20 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition shadow-lg">
+                        ↻ (R)
+                    </button>
+                    <button id="btn-open-menu" title="Студія польотів: Дрони, Локації, Складність (ESC)" class="bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 active:scale-95 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-lg flex items-center gap-1">
+                        <span>☰</span> <span>СТУДІЯ / МЕНЮ</span>
+                    </button>
+                </div>
+                <div class="text-[11px] sm:text-xs text-slate-300 bg-black/40 px-2.5 py-0.5 rounded pointer-events-none">
+                    ПОЛІТ: <span id="osd-timer" class="text-white font-semibold">00:00</span> &bull; <span id="osd-loc-name" class="text-sky-300">АЛЬПІЙСЬКИЙ ХРЕБЕТ</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Artificial Horizon & Crosshair SVG -->
+        <div class="relative flex items-center justify-center w-full h-full">
+            <svg id="osd-horizon-svg" class="w-64 h-64 sm:w-80 sm:h-80 overflow-visible opacity-85" viewBox="-150 -150 300 300">
+                <g stroke="#38bdf8" stroke-width="2" fill="none">
+                    <line x1="-18" y1="0" x2="-6" y2="0" />
+                    <line x1="6" y1="0" x2="18" y2="0" />
+                    <line x1="0" y1="-10" x2="0" y2="-4" />
+                    <circle cx="0" cy="0" r="2" fill="#38bdf8" />
+                </g>
+                <g id="osd-artificial-horizon">
+                    <line x1="-85" y1="0" x2="-28" y2="0" stroke="#ffffff" stroke-width="1.8" stroke-dasharray="4 2" />
+                    <line x1="28" y1="0" x2="85" y2="0" stroke="#ffffff" stroke-width="1.8" stroke-dasharray="4 2" />
+                    <line x1="-45" y1="-35" x2="-20" y2="-35" stroke="#94a3b8" stroke-width="1.2" />
+                    <line x1="20" y1="-35" x2="45" y2="-35" stroke="#94a3b8" stroke-width="1.2" />
+                    <line x1="-45" y1="35" x2="-20" y2="35" stroke="#94a3b8" stroke-width="1.2" />
+                    <line x1="20" y1="35" x2="45" y2="35" stroke="#94a3b8" stroke-width="1.2" />
+                </g>
+            </svg>
+
+            <div id="osd-alert-banner" class="hidden absolute top-6 bg-red-600/85 border border-red-300 text-white px-4 py-1.5 rounded-lg text-xs sm:text-sm font-bold tracking-wider uppercase animate-osd-warn shadow-xl">
+                УВАГА: НИЗЬКИЙ ЗАРЯД БАТАРЕЇ
+            </div>
+
+            <div id="osd-toast" class="hidden absolute bottom-16 bg-emerald-600/90 border border-emerald-200 text-white px-4 py-1.5 rounded-full text-xs sm:text-sm font-bold tracking-wide shadow-xl transition-opacity">
+                ВОРОТА ПРОЙДЕНО!
+            </div>
+        </div>
+
+        <!-- Bottom OSD Bar & Telemetry -->
+        <div class="flex flex-col gap-2 w-full">
+            <div class="flex items-end justify-between w-full px-1">
+                <div class="flex flex-col gap-1 bg-black/45 px-3 py-1.5 rounded-lg border border-white/10 text-xs sm:text-sm">
+                    <div class="flex items-center gap-2">
+                        <span class="text-slate-400">ГАЗ (THR):</span>
+                        <span id="osd-throttle" class="text-amber-400 font-bold w-10">0%</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-slate-400">ШВИДКІСТЬ:</span>
+                        <span id="osd-speed" class="text-white font-bold">0 КМ/Г</span>
+                    </div>
+                </div>
+
+                <div class="flex flex-col items-center text-center mb-1">
+                    <div id="osd-flight-mode-text" class="text-sm sm:text-base font-extrabold tracking-widest text-sky-400">
+                        ANGLE • STABILIZED
+                    </div>
+                    <div class="hidden md:block text-[11px] text-slate-300/90 bg-black/50 px-3 py-0.5 rounded-full mt-0.5">
+                        W/S — Газ | A/D — Поворот | Стрілки — Нахил | C — Дим | H — Кіно | M — Режим | R — Скид
+                    </div>
+                </div>
+
+                <div class="flex flex-col items-end gap-1 bg-black/45 px-3 py-1.5 rounded-lg border border-white/10 text-xs sm:text-sm">
+                    <div class="flex items-center gap-2">
+                        <span class="text-slate-400">ВИСОТА:</span>
+                        <span id="osd-alt" class="text-emerald-400 font-bold">0.0 м</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-slate-400">ДИСТАНЦІЯ:</span>
+                        <span id="osd-dist" class="text-white font-bold">0 м</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Virtual Dual Sticks -->
+            <div id="virtual-sticks-container" class="flex items-center justify-between w-full px-2 sm:px-6 pb-1 pointer-events-auto">
+                <div class="flex flex-col items-center gap-1">
+                    <div id="stick-left" class="stick-base">
+                        <div id="knob-left" class="stick-knob" style="top: 100%;"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-300/80 uppercase tracking-wider">ГАЗ / ПОВОРОТ</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                    <div id="stick-right" class="stick-base">
+                        <div id="knob-right" class="stick-knob"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-300/80 uppercase tracking-wider">НАХИЛ / КРЕН</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restore HUD Button -->
+    <button id="btn-restore-hud" class="hidden fixed top-4 right-4 z-30 bg-black/65 hover:bg-sky-600/80 backdrop-blur-md text-white border border-white/25 px-3.5 py-2 rounded-xl text-xs font-bold shadow-xl transition">
+        👁️ ПОКАЗАТИ OSD (H)
+    </button>
+
+    <!-- ===================================================================== -->
+    <!-- PRO FLIGHT STUDIO FULL-SIZE MENU MODAL                                -->
+    <!-- ===================================================================== -->
+    <div id="main-menu-modal" class="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-[2px] flex items-center justify-center p-2 sm:p-4">
+        <div class="studio-panel w-full max-w-6xl max-h-[94vh] rounded-3xl p-4 sm:p-6 flex flex-col gap-3.5 overflow-hidden">
+            
+            <!-- Top Studio Header & Navigation Tabs -->
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-700/70 pb-3 shrink-0">
+                <div>
+                    <div class="flex items-center gap-2.5">
+                        <span class="inline-block w-3 h-3 rounded-full bg-sky-400 animate-ping"></span>
+                        <h1 class="text-lg sm:text-2xl font-extrabold tracking-tight text-white">
+                            FPV FLIGHT <span class="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-cyan-300">SIMULATOR PRO</span>
+                        </h1>
+                    </div>
+                    <p class="text-xs text-slate-300 mt-0.5">
+                        Ангар на 8 дронів • 8 локацій від затишних ставків до морів • 4 рівні складності
+                    </p>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <div class="flex items-center gap-1.5 bg-slate-950/75 p-1.5 rounded-2xl border border-slate-800 overflow-x-auto">
+                    <button data-tab="tab-drones" class="menu-tab active bg-sky-600 text-white font-bold px-3.5 py-2 rounded-xl text-xs whitespace-nowrap transition">
+                        🛸 АНГАР ДРОНІВ (8)
+                    </button>
+                    <button data-tab="tab-locations" class="menu-tab text-slate-300 hover:text-white font-bold px-3.5 py-2 rounded-xl text-xs whitespace-nowrap transition">
+                        🌍 ЛОКАЦІЇ ТА ВОДОЙМИ (8)
+                    </button>
+                    <button data-tab="tab-difficulty" class="menu-tab text-slate-300 hover:text-white font-bold px-3.5 py-2 rounded-xl text-xs whitespace-nowrap transition">
+                        🎚️ СКЛАДНІСТЬ ТА РЕЖИМ
+                    </button>
+                    <button data-tab="tab-tuning" class="menu-tab text-slate-300 hover:text-white font-bold px-3.5 py-2 rounded-xl text-xs whitespace-nowrap transition">
+                        ⚙️ ФІЗИКА І КАМЕРА
+                    </button>
+                </div>
+            </div>
+
+            <!-- Live Selected Summary Strip -->
+            <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-900/75 border border-slate-800 px-3.5 py-2 rounded-2xl text-xs shrink-0">
+                <div class="flex flex-wrap items-center gap-3">
+                    <span>Дрон: <strong id="summary-drone" class="text-sky-400">Freestyle 5" APEX</strong></span>
+                    <span class="text-slate-600">|</span>
+                    <span>Локація: <strong id="summary-loc" class="text-emerald-400">Альпійський Хребет</strong></span>
+                    <span class="text-slate-600">|</span>
+                    <span>Складність: <strong id="summary-diff" class="text-amber-300">Стандарт (Пілот)</strong></span>
+                </div>
+                <button id="btn-audio-toggle" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition">
+                    🔊 ЗВУК: УВІМК
+                </button>
+            </div>
+
+            <!-- TAB CONTENT CONTAINER (Scrollable) -->
+            <div class="flex-1 overflow-y-auto custom-scroll pr-1">
+
+                <!-- ========================================== -->
+                <!-- TAB 1: 8 ДРОНІВ З УНІКАЛЬНИМ ДИЗАЙНОМ       -->
+                <!-- ========================================== -->
+                <div id="tab-drones" class="tab-pane flex flex-col gap-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold uppercase tracking-wider text-sky-400">Оберіть модель квадрокоптера (живе 3D-прев'ю на фоні)</span>
+                        <span id="preview-drone-specs" class="text-[11px] font-mono-osd text-emerald-300 bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+                            Вага: 680г • Тяга: 3.8:1 • Макс: 145 км/г
+                        </span>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5" id="drone-grid">
+                        <!-- 1. TinyWhoop 75mm -->
+                        <button data-drone="tinywhoop" class="select-card drone-card text-left p-3 rounded-2xl flex flex-col justify-between gap-2">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🐝</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300">Мікро 1S</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">TinyWhoop 75mm</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Ультралегкий мікродрон із закритими кільцями. Ідеальний для затишних ставків і парків.</p>
+                            </div>
+                            <div class="space-y-1 text-[10px] text-slate-400">
+                                <div class="flex justify-between"><span>Швидкість</span><span class="text-white">65 км/г</span></div>
+                                <div class="w-full bg-slate-800 h-1.5 rounded-full"><div class="bg-cyan-400 h-full rounded-full" style="width: 35%"></div></div>
+                            </div>
+                        </button>
+
+                        <!-- 2. CineWhoop 3.5" -->
+                        <button data-drone="cinewhoop" class="select-card drone-card text-left p-3 rounded-2xl flex flex-col justify-between gap-2">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🎥</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">Кіно 4S</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">CineWhoop 3.5" Pro</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Захисні аеродинамічні дакти, надплавна стабілізація для прольотів над водою та під мостами.</p>
+                            </div>
+                            <div class="space-y-1 text-[10px] text-slate-400">
+                                <div class="flex justify-between"><span>Швидкість</span><span class="text-white">105 км/г</span></div>
+                                <div class="w-full bg-slate-800 h-1.5 rounded-full"><div class="bg-indigo-400 h-full rounded-full" style="width: 55%"></div></div>
+                            </div>
+                        </button>
+
+                        <!-- 3. Freestyle 5" APEX -->
+                        <button data-drone="freestyle" class="select-card drone-card active text-left p-3 rounded-2xl flex flex-col justify-between gap-2">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🛸</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-sky-500/20 text-sky-300">Фрістайл 6S</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">Freestyle 5" APEX</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Еталонний карбоновий 5-дюймовий дрон для фліпів, роллів і дайвінгу зі скель та веж.</p>
+                            </div>
+                            <div class="space-y-1 text-[10px] text-slate-400">
+                                <div class="flex justify-between"><span>Швидкість</span><span class="text-white">148 км/г</span></div>
+                                <div class="w-full bg-slate-800 h-1.5 rounded-full"><div class="bg-sky-400 h-full rounded-full" style="width: 78%"></div></div>
+                            </div>
+                        </button>
+
+                        <!-- 4. Pro Racer 6S -->
+                        <button data-drone="racer" class="select-card drone-card text-left p-3 rounded-2xl flex flex-col justify-between gap-2">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">⚡</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Болід 6S</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">Pro Racer Strech-X</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Надлегка гоночна геометрія Strech-X, миттєвий відгук газу для проходження воріт.</p>
+                            </div>
+                            <div class="space-y-1 text-[10px] text-slate-400">
+                                <div class="flex justify-between"><span>Швидкість</span><span class="text-white">195 км/г</span></div>
+                                <div class="w-full bg-slate-800 h-1.5 rounded-full"><div class="bg-emerald-400 h-full rounded-full" style="width: 94%"></div></div>
+                            </div>
+                        </button>
+
+                        <!-- 5. LongRange 7" Explorer -->
+                        <button data-drone="longrange" class="select-card drone-card text-left p-3 rounded-2xl flex flex-col justify-between gap-2">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🧭</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-teal-500/20 text-teal-300">Дальній 7"</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">LongRange 7" Explorer</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Подовжені промені, GPS-модуль, велика ємність батареї для перельотів через моря та гори.</p>
+                            </div>
+                            <div class="space-y-1 text-[10px] text-slate-400">
+                                <div class="flex justify-between"><span>Автономність</span><span class="text-white">Максимальна</span></div>
+                                <div class="w-full bg-slate-800 h-1.5 rounded-full"><div class="bg-teal-400 h-full rounded-full" style="width: 82%"></div></div>
+                            </div>
+                        </button>
+
+                        <!-- 6. Hydro-FPV Amphibious -->
+                        <button data-drone="hydro" class="select-card drone-card text-left p-3 rounded-2xl flex flex-col justify-between gap-2">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🌊</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">Гідро-FPV</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">Hydro-FPV Amphibious</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Оснащений гідродинамічними поплавцями — може сідати прямо на воду озер, річок і морів!</p>
+                            </div>
+                            <div class="space-y-1 text-[10px] text-slate-400">
+                                <div class="flex justify-between"><span>Посадка на воду</span><span class="text-emerald-300 font-bold">ТАК</span></div>
+                                <div class="w-full bg-slate-800 h-1.5 rounded-full"><div class="bg-blue-400 h-full rounded-full" style="width: 68%"></div></div>
+                            </div>
+                        </button>
+
+                        <!-- 7. Heavy Cinema X8 Octo -->
+                        <button data-drone="cinelifter" class="select-card drone-card text-left p-3 rounded-2xl flex flex-col justify-between gap-2">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🎬</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">8 Моторів X8</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">CineLifter X8 Heavy</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">8 співвісних моторів та професійний кінооб'єктив. Не боїться сильного морського вітру.</p>
+                            </div>
+                            <div class="space-y-1 text-[10px] text-slate-400">
+                                <div class="flex justify-between"><span>Вітростійкість</span><span class="text-white">95%</span></div>
+                                <div class="w-full bg-slate-800 h-1.5 rounded-full"><div class="bg-purple-400 h-full rounded-full" style="width: 85%"></div></div>
+                            </div>
+                        </button>
+
+                        <!-- 8. X-Class Monster 10" -->
+                        <button data-drone="xclass" class="select-card drone-card text-left p-3 rounded-2xl flex flex-col justify-between gap-2">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🚀</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">Гігант 10"</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">X-Class Monster 10"</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Велетенський 10-дюймовий супердрон із колосальною тягою та максимальним розгоном 225 км/г.</p>
+                            </div>
+                            <div class="space-y-1 text-[10px] text-slate-400">
+                                <div class="flex justify-between"><span>Швидкість</span><span class="text-white">225 км/г</span></div>
+                                <div class="w-full bg-slate-800 h-1.5 rounded-full"><div class="bg-amber-400 h-full rounded-full" style="width: 100%"></div></div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ========================================== -->
+                <!-- TAB 2: 8 ЛОКАЦІЙ РІЗНОГО МАСШТАБУ          -->
+                <!-- ========================================== -->
+                <div id="tab-locations" class="tab-pane hidden flex flex-col gap-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-xs font-bold uppercase tracking-wider text-sky-400">Реалістичні локації: від затишних ставків до великих озер, річок і морів</span>
+                        <div class="flex items-center gap-1.5 text-[11px]">
+                            <button data-scale-filter="all" class="scale-filter-btn bg-sky-600 text-white px-2.5 py-1 rounded-lg font-bold">Усі (8)</button>
+                            <button data-scale-filter="small" class="scale-filter-btn bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg">Малі водойми</button>
+                            <button data-scale-filter="medium" class="scale-filter-btn bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg">Річки та парки</button>
+                            <button data-scale-filter="large" class="scale-filter-btn bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg">Озера та моря</button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5" id="location-grid">
+                        <!-- 1. Cozy Forest Pond (Small Scale) -->
+                        <button data-loc="pond" data-scale="small" class="select-card location-card text-left p-3 rounded-2xl flex flex-col justify-between gap-1.5">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🪷</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-teal-500/20 text-teal-300">Заповідник 1.2 км</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">Каскад Лісових Озер</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Система з трьох озер із протоками, дерев'яними містками, альтанками, густим лісом та 20 кільцями.</p>
+                            </div>
+                            <div class="text-[10px] text-sky-400 font-semibold">Площа: 1.2 км &bull; 20 гоночних кілець</div>
+                        </button>
+
+                        <!-- 2. Mountain River & Gorge (Medium Scale) -->
+                        <button data-loc="river" data-scale="medium" class="select-card location-card text-left p-3 rounded-2xl flex flex-col justify-between gap-1.5">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🏞️</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300">Каньйон 3.2 км</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">Великий Річковий Каньйон</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">3-кілометрове русло річки між високими скелями, 5 мостів, гребля ГЕС, пороги та 22 кільця.</p>
+                            </div>
+                            <div class="text-[10px] text-sky-400 font-semibold">Довжина: 3.2 км &bull; 22 гоночні кільця</div>
+                        </button>
+
+                        <!-- 3. Grand Alpine Lake (Large Scale) -->
+                        <button data-loc="lake" data-scale="large" class="select-card location-card text-left p-3 rounded-2xl flex flex-col justify-between gap-1.5">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">⛵</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">Фіорд 4.5 км</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">Північний Фіорд та Острови</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Гігантське гірське озеро-фіорд на 4.5 км, архіпелаг із 6 островів, флот яхт, причали та 24 кільця.</p>
+                            </div>
+                            <div class="text-[10px] text-sky-400 font-semibold">Площа: 4.5 км &bull; 24 гоночні кільця</div>
+                        </button>
+
+                        <!-- 4. Open Sea & Lighthouse Archipelago (Giant Scale) -->
+                        <button data-loc="sea" data-scale="large" class="select-card location-card text-left p-3 rounded-2xl flex flex-col justify-between gap-1.5">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🌊</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">Океан 6.0 км</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">Відкрите Море та Архіпелаг</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Безкрайній морський простір 6×6 км, скелясті острови, 2 маяки, нафтова платформа, кораблі та 24 кільця.</p>
+                            </div>
+                            <div class="text-[10px] text-sky-400 font-semibold">Площа: 6.0 км &bull; 24 гоночні кільця</div>
+                        </button>
+
+                        <!-- 5. Alpine Ridge (Medium/Large) -->
+                        <button data-loc="alpine" data-scale="large" class="select-card location-card active text-left p-3 rounded-2xl flex flex-col justify-between gap-1.5">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🏔️</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Хребет 5.0 км</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">Високогірний Альпійський Масив</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Величезна система гірських піків заввишки до 260 м, канатні дороги, 3 підвісні мости та 24 кільця.</p>
+                            </div>
+                            <div class="text-[10px] text-sky-400 font-semibold">Площа: 5.0 км &bull; 24 гоночні кільця</div>
+                        </button>
+
+                        <!-- 6. Emerald Forest Park (Medium) -->
+                        <button data-loc="forest" data-scale="medium" class="select-card location-card text-left p-3 rounded-2xl flex flex-col justify-between gap-1.5">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🌲</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-lime-500/20 text-lime-300">Нацпарк 3.8 км</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">Національний Лісовий Масив</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Гігантський ліс із сотнями дерев, 3 оглядові вежі, лісові озера, водоспад та 22 кільця.</p>
+                            </div>
+                            <div class="text-[10px] text-sky-400 font-semibold">Площа: 3.8 км &bull; 22 гоночні кільця</div>
+                        </button>
+
+                        <!-- 7. Mountain Citadel (Small/Medium) -->
+                        <button data-loc="castle" data-scale="small" class="select-card location-card text-left p-3 rounded-2xl flex flex-col justify-between gap-1.5">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🏰</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">Комплекс 2.8 км</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">Велика Гірська Цитадель</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Грандіозна фортеця на плато: 14 веж, подвійні акведуки, амфітеатр, вітряки та 22 кільця.</p>
+                            </div>
+                            <div class="text-[10px] text-sky-400 font-semibold">Площа: 2.8 км &bull; 22 гоночні кільця</div>
+                        </button>
+
+                        <!-- 8. Industrial Mega Park (Medium) -->
+                        <button data-loc="industrial" data-scale="medium" class="select-card location-card text-left p-3 rounded-2xl flex flex-col justify-between gap-1.5">
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xl">🏗️</span>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-sky-500/20 text-sky-300">Мега-Зона 4.0 км</span>
+                                </div>
+                                <h3 class="font-bold text-white text-sm mt-1">Індустріальний Мега-Комплекс</h3>
+                                <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">Величезна промзона: 4 багатоповерхові цехи, 8 кранів, градирні, термінали та 24 кільця.</p>
+                            </div>
+                            <div class="text-[10px] text-sky-400 font-semibold">Площа: 4.0 км &bull; 24 гоночні кільця</div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ========================================== -->
+                <!-- TAB 3: РІВНІ СКЛАДНОСТІ ТА РЕЖИМ ПОЛЬОТУ   -->
+                <!-- ========================================== -->
+                <div id="tab-difficulty" class="tab-pane hidden flex flex-col gap-4">
+                    <div>
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-sky-400 mb-2">1. Оберіть рівень складності симуляції</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5" id="difficulty-grid">
+                            <!-- Level 1: Novice -->
+                            <button data-diff="novice" class="select-card diff-card text-left p-3.5 rounded-2xl flex flex-col justify-between gap-2">
+                                <div>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Рівень 1 • Навчання</span>
+                                    <h4 class="font-bold text-white text-sm mt-1.5">Новачок (Cadet)</h4>
+                                    <p class="text-[11px] text-slate-300 mt-1 leading-snug">Без вітру, м'яка автостабілізація ANGLE, подвійний запас батареї, збільшені гоночні ворота та м'який відскок при торканні землі.</p>
+                                </div>
+                                <div class="text-[11px] text-emerald-400 font-semibold">Вітер: 0 м/с • Ворота: +35%</div>
+                            </button>
+
+                            <!-- Level 2: Standard -->
+                            <button data-diff="standard" class="select-card diff-card active text-left p-3.5 rounded-2xl flex flex-col justify-between gap-2">
+                                <div>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-sky-500/20 text-sky-300">Рівень 2 • Баланс</span>
+                                    <h4 class="font-bold text-white text-sm mt-1.5">Стандарт (Pilot)</h4>
+                                    <p class="text-[11px] text-slate-300 mt-1 leading-snug">Легкий природний бриз, реалістична інерція маси, стандартний розряд LiPo та збалансована чутливість стіків.</p>
+                                </div>
+                                <div class="text-[11px] text-sky-400 font-semibold">Вітер: 2.5 м/с • Реалістична фізика</div>
+                            </button>
+
+                            <!-- Level 3: Sport -->
+                            <button data-diff="sport" class="select-card diff-card text-left p-3.5 rounded-2xl flex flex-col justify-between gap-2">
+                                <div>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">Рівень 3 • Просунутий</span>
+                                    <h4 class="font-bold text-white text-sm mt-1.5">Спорт (Racer)</h4>
+                                    <p class="text-[11px] text-slate-300 mt-1 leading-snug">Поривчастий вітер над водою й горами, автоматичне ввімкнення режиму ACRO, просадка напруги батареї під газом.</p>
+                                </div>
+                                <div class="text-[11px] text-amber-400 font-semibold">Вітер: 6.0 м/с • Режим ACRO</div>
+                            </button>
+
+                            <!-- Level 4: Pro Hardcore -->
+                            <button data-diff="pro" class="select-card diff-card text-left p-3.5 rounded-2xl flex flex-col justify-between gap-2">
+                                <div>
+                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-rose-500/20 text-rose-300">Рівень 4 • Експерт</span>
+                                    <h4 class="font-bold text-white text-sm mt-1.5">Експерт Pro (Sim-Master)</h4>
+                                    <p class="text-[11px] text-slate-300 mt-1 leading-snug">Сильні турбулентні пориви, вузькі професійні ворота, повний ACRO без допомоги та перезапуск при сильному ударі.</p>
+                                </div>
+                                <div class="text-[11px] text-rose-400 font-semibold">Вітер: 11 м/с • Жорсткі колізії</div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="bg-slate-900/70 p-3.5 rounded-2xl border border-slate-800">
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-sky-400 mb-2">2. Режим гри</h3>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button id="select-gamemode-free" class="bg-sky-600 text-white font-bold py-2.5 px-3 rounded-xl text-xs border border-sky-400 transition">
+                                    🦅 ВІЛЬНИЙ ПОЛІТ / ДОСЛІДЖЕННЯ
+                                </button>
+                                <button id="select-gamemode-race" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-700 transition">
+                                    🏁 ПЕРЕГОНИ ПО ВОРОТАХ
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-900/70 p-3.5 rounded-2xl border border-slate-800">
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-sky-400 mb-2">3. Режим стабілізації польотного контролера</h3>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button id="select-flight-angle" class="bg-emerald-600/90 text-white font-bold py-2.5 px-2 rounded-xl text-xs border border-emerald-400 transition">
+                                    🛡️ ANGLE
+                                </button>
+                                <button id="select-flight-horizon" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 px-2 rounded-xl text-xs border border-slate-700 transition">
+                                    ⚖️ HORIZON
+                                </button>
+                                <button id="select-flight-acro" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 px-2 rounded-xl text-xs border border-slate-700 transition">
+                                    🔥 ACRO
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ========================================== -->
+                <!-- TAB 4: ФІЗИКА, КАМЕРА, ЧАС ДОБИ ТА LED     -->
+                <!-- ========================================== -->
+                <div id="tab-tuning" class="tab-pane hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-slate-900/70 p-4 rounded-2xl border border-slate-800 flex flex-col gap-3">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-sky-400">Налаштування FPV камери та стіків</h3>
+
+                        <div class="flex flex-col gap-1">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-300">Кут нахилу FPV камери (Camera Tilt):</span>
+                                <span id="val-cam-tilt" class="font-mono-osd text-sky-400 font-bold">25°</span>
+                            </div>
+                            <input type="range" id="slider-cam-tilt" min="0" max="55" value="25">
+                        </div>
+
+                        <div class="flex flex-col gap-1">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-300">Чутливість стіків (Betaflight Rates):</span>
+                                <span id="val-rates" class="font-mono-osd text-sky-400 font-bold">1.0x</span>
+                            </div>
+                            <input type="range" id="slider-rates" min="0.5" max="2.0" step="0.1" value="1.0">
+                        </div>
+
+                        <div class="flex flex-col gap-1">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-300">Потужність тяги (Motor Output):</span>
+                                <span id="val-thrust" class="font-mono-osd text-sky-400 font-bold">100%</span>
+                            </div>
+                            <input type="range" id="slider-thrust" min="60" max="150" step="5" value="100">
+                        </div>
+
+                        <div class="flex flex-col gap-1">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-300">Кут огляду об'єктива (FOV):</span>
+                                <span id="val-fov" class="font-mono-osd text-sky-400 font-bold">105°</span>
+                            </div>
+                            <input type="range" id="slider-fov" min="80" max="130" step="5" value="105">
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-900/70 p-4 rounded-2xl border border-slate-800 flex flex-col gap-3">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-sky-400">Атмосфера, LED та інтерфейс</h3>
+
+                        <div class="flex flex-col gap-1">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-300">Сила вітру (м/с):</span>
+                                <span id="val-wind" class="font-mono-osd text-sky-400 font-bold">2.5 м/с</span>
+                            </div>
+                            <input type="range" id="slider-wind" min="0" max="15" step="0.5" value="2.5">
+                        </div>
+
+                        <div class="flex items-center justify-between bg-slate-950/60 px-3 py-2 rounded-xl border border-slate-800">
+                            <span class="text-xs text-slate-300">Колір LED дрона та диму:</span>
+                            <div class="flex items-center gap-2" id="led-color-picker">
+                                <button data-color="#38bdf8" class="w-5 h-5 rounded-full bg-sky-400 ring-2 ring-white scale-110 transition"></button>
+                                <button data-color="#f43f5e" class="w-5 h-5 rounded-full bg-rose-500 opacity-75 hover:opacity-100 transition"></button>
+                                <button data-color="#10b981" class="w-5 h-5 rounded-full bg-emerald-400 opacity-75 hover:opacity-100 transition"></button>
+                                <button data-color="#a855f7" class="w-5 h-5 rounded-full bg-purple-500 opacity-75 hover:opacity-100 transition"></button>
+                                <button data-color="#f59e0b" class="w-5 h-5 rounded-full bg-amber-400 opacity-75 hover:opacity-100 transition"></button>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col gap-2 text-xs text-slate-300 pt-1">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="chk-virtual-sticks" checked class="accent-sky-500 w-4 h-4 rounded">
+                                <span>Показувати віртуальні стіки на екрані</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="chk-analog-fx" checked class="accent-sky-500 w-4 h-4 rounded">
+                                <span>Оптична віньєтка FPV камери</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Studio Launch Bar -->
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-700/70 pt-3 shrink-0">
+                <div class="text-[11px] text-slate-300">
+                    <strong class="text-white">Керування:</strong> <span class="text-sky-300">W/S</span> — Газ, <span class="text-sky-300">A/D</span> — Поворот, <span class="text-sky-300">Стрілки</span> — Нахил, <span class="text-fuchsia-300">C</span> — Дим, <span class="text-indigo-300">H</span> — Кіно-режим, <span class="text-emerald-300">ESC</span> — Меню
+                </div>
+
+                <button id="btn-start-flight" class="w-full sm:w-auto bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 active:scale-95 text-white font-extrabold text-sm sm:text-base px-8 py-3 rounded-2xl shadow-lg shadow-sky-500/35 transition cursor-pointer whitespace-nowrap">
+                    🚀 ЗЛІТ / ПРОДОВЖИТИ ПОЛІТ
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * FPV DRONE PRO SIMULATOR 3D
+         * Професійний симулятор польотів із 8 дронами, 8 локаціями (від ставків до морів) та 4 рівнями складності.
+         */
+
+        // ==========================================
+        // 1. ХАРАКТЕРИСТИКИ 8-МИ МОДЕЛЕЙ ДРОНІВ
+        // ==========================================
+        const DRONE_PRESETS = {
+            tinywhoop: {
+                title: 'TinyWhoop 75mm',
+                osdName: 'TINYWHOOP 75',
+                cells: '1S',
+                baseVolt: 4.35,
+                specsText: 'Вага: 32г • Тяга: 2.4:1 • Мікро-клас для парків',
+                mass: 0.18,
+                maxThrust: 4.4,
+                dragCoeff: 0.055,
+                rateScale: 0.68,
+                basePitchFreq: 185,
+                canFloat: false
+            },
+            cinewhoop: {
+                title: 'CineWhoop 3.5" Pro',
+                osdName: 'CINEWHOOP 3.5"',
+                cells: '4S',
+                baseVolt: 16.8,
+                specsText: 'Вага: 420г • Тяга: 2.8:1 • Плавна кінозйомка',
+                mass: 0.42,
+                maxThrust: 13.8,
+                dragCoeff: 0.046,
+                rateScale: 0.75,
+                basePitchFreq: 145,
+                canFloat: false
+            },
+            freestyle: {
+                title: 'Freestyle 5" APEX',
+                osdName: 'APEX 5" 6S',
+                cells: '6S',
+                baseVolt: 25.2,
+                specsText: 'Вага: 680г • Тяга: 3.8:1 • Макс: 148 км/г',
+                mass: 0.68,
+                maxThrust: 25.5,
+                dragCoeff: 0.032,
+                rateScale: 1.0,
+                basePitchFreq: 108,
+                canFloat: false
+            },
+            racer: {
+                title: 'Pro Racer Strech-X',
+                osdName: 'RACER 5" PRO',
+                cells: '6S',
+                baseVolt: 25.2,
+                specsText: 'Вага: 490г • Тяга: 5.2:1 • Макс: 195 км/г',
+                mass: 0.49,
+                maxThrust: 25.2,
+                dragCoeff: 0.022,
+                rateScale: 1.25,
+                basePitchFreq: 128,
+                canFloat: false
+            },
+            longrange: {
+                title: 'LongRange 7" Explorer',
+                osdName: 'LONGRANGE 7"',
+                cells: '6S Li-Ion',
+                baseVolt: 25.2,
+                specsText: 'Вага: 890г • Автономність: 2.5x • Крейсер: 130 км/г',
+                mass: 0.89,
+                maxThrust: 29.0,
+                dragCoeff: 0.028,
+                rateScale: 0.85,
+                basePitchFreq: 88,
+                canFloat: false
+            },
+            hydro: {
+                title: 'Hydro-FPV Amphibious',
+                osdName: 'HYDRO-FPV 6"',
+                cells: '6S',
+                baseVolt: 25.2,
+                specsText: 'Вага: 840г • Поплавці: Посадка на воду дозволена',
+                mass: 0.84,
+                maxThrust: 28.5,
+                dragCoeff: 0.036,
+                rateScale: 0.86,
+                basePitchFreq: 95,
+                canFloat: true
+            },
+            cinelifter: {
+                title: 'CineLifter X8 Heavy',
+                osdName: 'CINELIFTER X8',
+                cells: '8S',
+                baseVolt: 33.6,
+                specsText: 'Вага: 2100г • 8 моторів X8 • Висока вітростійкість',
+                mass: 1.65,
+                maxThrust: 58.0,
+                dragCoeff: 0.030,
+                rateScale: 0.78,
+                basePitchFreq: 82,
+                canFloat: false
+            },
+            xclass: {
+                title: 'X-Class Monster 10"',
+                osdName: 'X-CLASS 10"',
+                cells: '8S',
+                baseVolt: 33.6,
+                specsText: 'Вага: 1550г • Тяга: 4.5:1 • Макс: 225 км/г',
+                mass: 1.45,
+                maxThrust: 64.0,
+                dragCoeff: 0.025,
+                rateScale: 0.92,
+                basePitchFreq: 72,
+                canFloat: false
+            }
+        };
+
+        // ==========================================
+        // 2. РІВНІ СКЛАДНОСТІ
+        // ==========================================
+        const DIFFICULTY_PRESETS = {
+            novice: {
+                title: 'Новачок (Cadet)',
+                badge: '[НОВАЧОК]',
+                windSpeed: 0.0,
+                gateScale: 1.35,
+                batteryDrainMult: 0.45,
+                crashThreshold: 999,
+                forcedMode: 'ANGLE'
+            },
+            standard: {
+                title: 'Стандарт (Pilot)',
+                badge: '[СТАНДАРТ]',
+                windSpeed: 2.5,
+                gateScale: 1.0,
+                batteryDrainMult: 1.0,
+                crashThreshold: 28,
+                forcedMode: null
+            },
+            sport: {
+                title: 'Спорт (Racer)',
+                badge: '[СПОРТ]',
+                windSpeed: 6.0,
+                gateScale: 0.88,
+                batteryDrainMult: 1.35,
+                crashThreshold: 19,
+                forcedMode: 'ACRO'
+            },
+            pro: {
+                title: 'Експерт Pro (Sim-Master)',
+                badge: '[ЕКСПЕРТ PRO]',
+                windSpeed: 11.0,
+                gateScale: 0.75,
+                batteryDrainMult: 1.65,
+                crashThreshold: 13,
+                forcedMode: 'ACRO'
+            }
+        };
+
+        // ==========================================
+        // 3. ГЛОБАЛЬНИЙ СТАН СИМУЛЯТОРА
+        // ==========================================
+        const SIM_STATE = {
+            isMenuOpen: true,
+            droneType: 'freestyle',
+            location: 'alpine',
+            difficulty: 'standard',
+            gameMode: 'free',
+            flightMode: 'ANGLE',
+            cameraTiltDeg: 25,
+            fovDeg: 105,
+            ratesMultiplier: 1.0,
+            thrustMultiplier: 1.0,
+            windSpeed: 2.5,
+            ledColor: '#38bdf8',
+            smokeEnabled: false,
+            cleanCinemaView: false,
+            audioEnabled: true,
+            batteryVoltage: 25.2,
+            flightTimeSec: 0,
+            gatesPassed: 0,
+            totalGates: 8,
+            raceStartTime: 0,
+            bestRaceTime: null
+        };
+
+        const DRONE = {
+            position: new THREE.Vector3(0, 14, 78),
+            velocity: new THREE.Vector3(0, 0, 0),
+            quaternion: new THREE.Quaternion(),
+            mass: 0.68,
+            maxThrust: 25.5,
+            dragCoeff: 0.032,
+            rateScale: 1.0,
+            radius: 0.45
+        };
+
+        const UP_VEC = new THREE.Vector3(0, 1, 0);
+
+        const INPUT = {
+            throttle: 0,
+            yaw: 0,
+            pitch: 0,
+            roll: 0,
+            keys: {},
+            stickLeft: { x: 0, y: -1 },
+            stickRight: { x: 0, y: 0 }
+        };
+
+        // ==========================================
+        // 4. ІНІЦІАЛІЗАЦІЯ THREE.JS 3D СЦЕНИ
+        // ==========================================
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x60a5fa);
+        scene.fog = new THREE.FogExp2(0xbae6fd, 0.00045);
+
+        const camera = new THREE.PerspectiveCamera(105, window.innerWidth / window.innerHeight, 0.1, 6500);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.08;
+        container.appendChild(renderer.domElement);
+
+        // ==========================================
+        // ПРОЦЕДУРНІ PBR-ТЕКСТУРИ ДЛЯ РЕАЛІСТИЧНОСТІ
+        // ==========================================
+        function createNoiseTexture(baseHex, accentHex, grainIntensity, repeatCount) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = baseHex;
+            ctx.fillRect(0, 0, 256, 256);
+
+            for (let i = 0; i < 4500; i++) {
+                const x = Math.random() * 256;
+                const y = Math.random() * 256;
+                const size = 1 + Math.random() * 3.5;
+                ctx.fillStyle = Math.random() > 0.5 ? accentHex : 'rgba(0,0,0,0.18)';
+                ctx.globalAlpha = Math.random() * grainIntensity;
+                ctx.fillRect(x, y, size, size);
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(repeatCount, repeatCount);
+            return tex;
+        }
+
+        const TEX_TERRAIN = createNoiseTexture('#ffffff', '#94a3b8', 0.32, 48);
+        const TEX_CONCRETE = createNoiseTexture('#475569', '#1e293b', 0.35, 64);
+        const TEX_ROCK = createNoiseTexture('#64748b', '#334155', 0.42, 12);
+        const TEX_WATER = createNoiseTexture('#0284c7', '#e0f2fe', 0.25, 36);
+
+        const hemiLight = new THREE.HemisphereLight(0xe0f2fe, 0x334155, 0.88);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfffbeb, 1.35);
+        dirLight.position.set(180, 320, 140);
+        scene.add(dirLight);
+
+        const worldGroup = new THREE.Group();
+        const gatesGroup = new THREE.Group();
+        const smokeGroup = new THREE.Group();
+        const droneMeshGroup = new THREE.Group();
+        scene.add(worldGroup, gatesGroup, smokeGroup, droneMeshGroup);
+
+        // ==========================================
+        // 5. ПРОЦЕДУРНИЙ ЗВУКОВИЙ РУШІЙ БЕЗКОЛЕКТОРНИХ МОТОРІВ
+        // ==========================================
+        const audioEngine = {
+            ctx: null,
+            oscillators: [],
+            masterGain: null,
+            initialized: false,
+
+            init() {
+                if (this.initialized) {
+                    if (this.ctx && this.ctx.state === 'suspended') {
+                        this.ctx.resume();
+                    }
+                    return;
+                }
+                try {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioCtx) return;
+                    this.ctx = new AudioCtx();
+                    this.masterGain = this.ctx.createGain();
+                    this.masterGain.gain.value = 0.0;
+                    this.masterGain.connect(this.ctx.destination);
+
+                    const detunes = [-7, -2, 3, 8];
+                    for (let i = 0; i < 4; i++) {
+                        const osc = this.ctx.createOscillator();
+                        const filter = this.ctx.createBiquadFilter();
+                        osc.type = i % 2 === 0 ? 'sawtooth' : 'triangle';
+                        osc.frequency.value = 110;
+                        osc.detune.value = detunes[i];
+
+                        filter.type = 'lowpass';
+                        filter.frequency.value = 650;
+
+                        osc.connect(filter);
+                        filter.connect(this.masterGain);
+                        osc.start();
+                        this.oscillators.push({ osc, filter });
+                    }
+                    this.initialized = true;
+                } catch (err) {
+                    console.warn('Web Audio API недоступний:', err);
+                }
+            },
+
+            update(throttle, angularActivity, isMenuOpen) {
+                if (!this.initialized || !this.ctx || !this.masterGain) return;
+                const now = this.ctx.currentTime;
+                if (!SIM_STATE.audioEnabled || isMenuOpen) {
+                    this.masterGain.gain.setTargetAtTime(0.0, now, 0.08);
+                    return;
+                }
+                const preset = DRONE_PRESETS[SIM_STATE.droneType] || DRONE_PRESETS.freestyle;
+                const baseFreq = preset.basePitchFreq + throttle * 310 + angularActivity * 55;
+                const targetGain = 0.025 + throttle * 0.085;
+
+                this.masterGain.gain.setTargetAtTime(targetGain, now, 0.05);
+                this.oscillators.forEach((item, idx) => {
+                    item.osc.frequency.setTargetAtTime(baseFreq * (1 + idx * 0.014), now, 0.04);
+                    item.filter.frequency.setTargetAtTime(420 + throttle * 1800, now, 0.05);
+                });
+            }
+        };
+
+        // ==========================================
+        // 6. ПОБУДОВА 3D-МОДЕЛІ ДРОНА ДЛЯ АНГАРУ
+        // ==========================================
+        let propMeshes = [];
+
+        function build3DDroneMesh(droneKey, ledHex) {
+            while (droneMeshGroup.children.length > 0) {
+                droneMeshGroup.remove(droneMeshGroup.children[0]);
+            }
+            propMeshes = [];
+
+            const scaleMap = {
+                tinywhoop: 0.48,
+                cinewhoop: 0.78,
+                freestyle: 1.0,
+                racer: 0.94,
+                longrange: 1.28,
+                hydro: 1.15,
+                cinelifter: 1.48,
+                xclass: 1.65
+            };
+            const s = scaleMap[droneKey] || 1.0;
+
+            const carbonMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.35, metalness: 0.7 });
+            const accentMat = new THREE.MeshStandardMaterial({ color: ledHex, emissive: ledHex, emissiveIntensity: 0.65 });
+            const propMat = new THREE.MeshStandardMaterial({ color: ledHex, transparent: true, opacity: 0.75, side: THREE.DoubleSide });
+
+            // Центральна рама
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.32 * s, 0.09 * s, 0.48 * s), carbonMat);
+            droneMeshGroup.add(body);
+
+            // Акумулятор зверху
+            const battery = new THREE.Mesh(
+                new THREE.BoxGeometry(0.18 * s, 0.11 * s, 0.28 * s),
+                new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 })
+            );
+            battery.position.set(0, 0.09 * s, 0.05 * s);
+            droneMeshGroup.add(battery);
+
+            // FPV камера спереду
+            const camHousing = new THREE.Mesh(new THREE.BoxGeometry(0.12 * s, 0.12 * s, 0.12 * s), accentMat);
+            camHousing.position.set(0, 0.05 * s, -0.24 * s);
+            droneMeshGroup.add(camHousing);
+
+            // Поплавці для Hydro-FPV
+            if (droneKey === 'hydro') {
+                const floatMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.4 });
+                [-0.32 * s, 0.32 * s].forEach(fx => {
+                    const pontoon = new THREE.Mesh(new THREE.CylinderGeometry(0.065 * s, 0.065 * s, 0.85 * s, 14), floatMat);
+                    pontoon.rotation.x = Math.PI / 2;
+                    pontoon.position.set(fx, -0.15 * s, 0);
+                    droneMeshGroup.add(pontoon);
+                });
+            }
+
+            // 4 промені, мотори та пропелери (або 8 для X8)
+            const armCoords = [
+                [-0.36 * s, -0.34 * s],
+                [0.36 * s, -0.34 * s],
+                [-0.36 * s, 0.34 * s],
+                [0.36 * s, 0.34 * s]
+            ];
+
+            armCoords.forEach(([ax, az]) => {
+                const armLen = Math.hypot(ax, az);
+                const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05 * s, 0.025 * s, armLen), carbonMat);
+                arm.position.set(ax / 2, 0, az / 2);
+                arm.lookAt(ax, 0, az);
+                droneMeshGroup.add(arm);
+
+                const motor = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.055 * s, 0.055 * s, 0.06 * s, 14),
+                    new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.85, roughness: 0.2 })
+                );
+                motor.position.set(ax, 0.035 * s, az);
+                droneMeshGroup.add(motor);
+
+                const prop = new THREE.Mesh(new THREE.BoxGeometry(0.42 * s, 0.006 * s, 0.045 * s), propMat);
+                prop.position.set(ax, 0.072 * s, az);
+                droneMeshGroup.add(prop);
+                propMeshes.push(prop);
+
+                if (droneKey === 'cinelifter') {
+                    const bottomProp = new THREE.Mesh(new THREE.BoxGeometry(0.42 * s, 0.006 * s, 0.045 * s), propMat);
+                    bottomProp.position.set(ax, -0.055 * s, az);
+                    droneMeshGroup.add(bottomProp);
+                    propMeshes.push(bottomProp);
+                }
+
+                if (droneKey === 'tinywhoop' || droneKey === 'cinewhoop') {
+                    const duct = new THREE.Mesh(new THREE.TorusGeometry(0.24 * s, 0.022 * s, 10, 24), accentMat);
+                    duct.rotation.x = Math.PI / 2;
+                    duct.position.set(ax, 0.045 * s, az);
+                    droneMeshGroup.add(duct);
+                }
+            });
+        }
+
+        function selectDroneModel(droneKey) {
+            const preset = DRONE_PRESETS[droneKey] || DRONE_PRESETS.freestyle;
+            SIM_STATE.droneType = droneKey;
+            DRONE.mass = preset.mass;
+            DRONE.maxThrust = preset.maxThrust;
+            DRONE.dragCoeff = preset.dragCoeff;
+            DRONE.rateScale = preset.rateScale;
+
+            document.getElementById('osd-drone-model').textContent = preset.osdName;
+            document.getElementById('osd-bat-cells').textContent = `(${preset.cells})`;
+            document.getElementById('summary-drone').textContent = preset.title;
+            document.getElementById('preview-drone-specs').textContent = preset.specsText;
+
+            build3DDroneMesh(droneKey, SIM_STATE.ledColor);
+            resetDrone();
+        }
+
+        // ==========================================
+        // 7. АКРОБАТИЧНИЙ ДИМОВИЙ СЛІД ТА ДЕРЕВА
+        // ==========================================
+        const smokeParticles = [];
+        const smokeGeo = new THREE.SphereGeometry(0.32, 8, 8);
+
+        function updateSmokeParticles(dt) {
+            if (SIM_STATE.smokeEnabled && !SIM_STATE.isMenuOpen) {
+                const mat = new THREE.MeshBasicMaterial({
+                    color: SIM_STATE.ledColor,
+                    transparent: true,
+                    opacity: 0.55
+                });
+                const puff = new THREE.Mesh(smokeGeo, mat);
+                puff.position.copy(DRONE.position);
+                smokeGroup.add(puff);
+                smokeParticles.push({ mesh: puff, life: 1.0 });
+            }
+
+            for (let i = smokeParticles.length - 1; i >= 0; i--) {
+                const p = smokeParticles[i];
+                p.life -= dt * 0.65;
+                if (p.life <= 0) {
+                    smokeGroup.remove(p.mesh);
+                    p.mesh.material.dispose();
+                    smokeParticles.splice(i, 1);
+                } else {
+                    p.mesh.scale.addScalar(dt * 2.4);
+                    p.mesh.material.opacity = p.life * 0.45;
+                }
+            }
+        }
+
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 });
+        const pineMat = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.85 });
+        const leafMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 });
+
+        function createPineTree(x, y, z, scale = 1.0) {
+            const tree = new THREE.Group();
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.45 * scale, 0.75 * scale, 5 * scale, 7), trunkMat);
+            trunk.position.y = 2.5 * scale;
+            tree.add(trunk);
+
+            [0, 1, 2].forEach(tier => {
+                const cone = new THREE.Mesh(
+                    new THREE.ConeGeometry((4.2 - tier * 0.95) * scale, 6.2 * scale, 8),
+                    pineMat
+                );
+                cone.position.y = (6.5 + tier * 3.4) * scale;
+                tree.add(cone);
+            });
+            tree.position.set(x, y, z);
+            worldGroup.add(tree);
+        }
+
+        function createBroadleafTree(x, y, z, scale = 1.0) {
+            const tree = new THREE.Group();
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.5 * scale, 0.8 * scale, 5.5 * scale, 7), trunkMat);
+            trunk.position.y = 2.75 * scale;
+            const crown = new THREE.Mesh(new THREE.DodecahedronGeometry(4.4 * scale, 1), leafMat);
+            crown.position.y = 7.8 * scale;
+            tree.add(trunk, crown);
+            tree.position.set(x, y, z);
+            worldGroup.add(tree);
+        }
+
+        // ==========================================
+        // 8. ГОНОЧНІ ВОРОТА (CHECKPOINT GATES + ВКАЗІВНИК)
+        // ==========================================
+        let raceGates = [];
+        let gateWaypoints = [];
+        let nextGatePointer = null;
+
+        function buildRaceGates() {
+            while (gatesGroup.children.length > 0) {
+                gatesGroup.remove(gatesGroup.children[0]);
+            }
+            raceGates = [];
+            const points = gateWaypoints.length > 0 ? gateWaypoints : [
+                [0, 18, 15], [45, 28, -25], [85, 42, -75], [35, 22, -125],
+                [-45, 35, -110], [-90, 26, -45], [-65, 16, 25], [-15, 20, 45]
+            ];
+            SIM_STATE.totalGates = points.length;
+            const diffPreset = DIFFICULTY_PRESETS[SIM_STATE.difficulty] || DIFFICULTY_PRESETS.standard;
+            const gRadius = 7.8 * diffPreset.gateScale;
+
+            for (let i = 0; i < points.length; i++) {
+                const [gx, gy, gz] = points[i];
+                const [nx, ny, nz] = points[(i + 1) % points.length];
+
+                const gateGroup = new THREE.Group();
+                gateGroup.position.set(gx, gy, gz);
+                gateGroup.lookAt(nx, ny, nz);
+
+                const isFirst = i === 0;
+                const isSecond = i === 1;
+                const torus = new THREE.Mesh(
+                    new THREE.TorusGeometry(gRadius, 0.55, 14, 40),
+                    new THREE.MeshBasicMaterial({ color: isFirst ? 0x10b981 : (isSecond ? 0xf59e0b : 0x38bdf8) })
+                );
+                gateGroup.add(torus);
+
+                const innerRing = new THREE.Mesh(
+                    new THREE.TorusGeometry(gRadius - 0.75, 0.18, 8, 40),
+                    new THREE.MeshBasicMaterial({ color: 0xffffff })
+                );
+                gateGroup.add(innerRing);
+
+                // Високий світловий маяк над активним кільцем для орієнтації на великих картах
+                const beaconBeam = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.4, 1.4, 90, 10, 1, true),
+                    new THREE.MeshBasicMaterial({
+                        color: 0x10b981,
+                        transparent: true,
+                        opacity: 0.25,
+                        side: THREE.DoubleSide
+                    })
+                );
+                beaconBeam.position.y = 48;
+                beaconBeam.visible = isFirst;
+                gateGroup.add(beaconBeam);
+
+                gatesGroup.add(gateGroup);
+                raceGates.push({ mesh: torus, beam: beaconBeam, group: gateGroup, radius: gRadius + 1.4 });
+            }
+
+            // 3D-стрілка перед камерою дрона, яка вказує напрямок на наступне кільце
+            nextGatePointer = new THREE.Mesh(
+                new THREE.ConeGeometry(0.18, 0.55, 8),
+                new THREE.MeshBasicMaterial({ color: 0x10b981, transparent: true, opacity: 0.85 })
+            );
+            nextGatePointer.rotation.x = Math.PI / 2;
+            gatesGroup.add(nextGatePointer);
+
+            updateGatesVisibility();
+        }
+
+        function updateGatesVisibility() {
+            gatesGroup.visible = SIM_STATE.gameMode === 'race';
+        }
+
+        function updateRaceHUD() {
+            const banner = document.getElementById('osd-race-banner');
+            if (!banner) return;
+            if (SIM_STATE.gameMode === 'race') {
+                banner.classList.remove('hidden');
+                document.getElementById('osd-gate-count').textContent = `${SIM_STATE.gatesPassed} / ${SIM_STATE.totalGates}`;
+            } else {
+                banner.classList.add('hidden');
+            }
+        }
+
+        function checkRaceGates() {
+            if (SIM_STATE.gameMode !== 'race' || raceGates.length === 0) return;
+            const targetIdx = SIM_STATE.gatesPassed % raceGates.length;
+            const gate = raceGates[targetIdx];
+            const distToGate = DRONE.position.distanceTo(gate.group.position);
+
+            const distEl = document.getElementById('osd-next-gate-dist');
+            if (distEl) distEl.textContent = `${Math.round(distToGate)}м`;
+
+            // Позиціонування навігаційної стрілки перед дроном у бік активного кільця
+            if (nextGatePointer) {
+                const forwardOffset = new THREE.Vector3(0, 1.35, -4.5).applyQuaternion(DRONE.quaternion);
+                nextGatePointer.position.copy(DRONE.position).add(forwardOffset);
+                nextGatePointer.lookAt(gate.group.position);
+                nextGatePointer.rotateX(Math.PI / 2);
+            }
+
+            if (distToGate < gate.radius) {
+                SIM_STATE.gatesPassed++;
+                gate.mesh.material.color.setHex(0x475569);
+                gate.beam.visible = false;
+
+                const nextIdx = SIM_STATE.gatesPassed % raceGates.length;
+                const afterNextIdx = (SIM_STATE.gatesPassed + 1) % raceGates.length;
+                raceGates[nextIdx].mesh.material.color.setHex(0x10b981);
+                raceGates[nextIdx].beam.visible = true;
+                if (afterNextIdx !== nextIdx) {
+                    raceGates[afterNextIdx].mesh.material.color.setHex(0xf59e0b);
+                }
+
+                if (SIM_STATE.gatesPassed >= SIM_STATE.totalGates) {
+                    const finalSec = ((performance.now() - SIM_STATE.raceStartTime) / 1000).toFixed(1);
+                    if (!SIM_STATE.bestRaceTime || parseFloat(finalSec) < SIM_STATE.bestRaceTime) {
+                        SIM_STATE.bestRaceTime = parseFloat(finalSec);
+                        document.getElementById('osd-best-time').textContent = `(РЕКОРД: ${finalSec}с)`;
+                    }
+                    showToast(`🏁 ФІНІШ ТРАСИ! ЧАС: ${finalSec}с`);
+                    SIM_STATE.gatesPassed = 0;
+                    SIM_STATE.raceStartTime = performance.now();
+                    raceGates.forEach((g, idx) => {
+                        g.mesh.material.color.setHex(idx === 0 ? 0x10b981 : (idx === 1 ? 0xf59e0b : 0x38bdf8));
+                        g.beam.visible = idx === 0;
+                    });
+                } else {
+                    showToast(`КІЛЬЦЕ ${SIM_STATE.gatesPassed}/${SIM_STATE.totalGates} ПРОЙДЕНО!`);
+                }
+                updateRaceHUD();
+            }
+        }
+
+        // ==========================================
+        // 9. ГЕНЕРАТОР 8-МИ ВЕЛИКИХ РЕАЛІСТИЧНИХ 3D ЛОКАЦІЙ
+        // ==========================================
+        let animatedWorldObjects = [];
+        let locationSpawnPos = new THREE.Vector3(0, 18, 180);
+        let activeWaterMesh = null;
+        let currentWaterLevel = -999;
+
+        function getTerrainHeight(x, z) {
+            const loc = SIM_STATE.location;
+            if (loc === 'pond') {
+                // Каскад із 3 лісових озер (1200x1200м)
+                const d1 = Math.hypot(x, z);
+                const d2 = Math.hypot(x - 160, z + 140);
+                const d3 = Math.hypot(x + 170, z + 120);
+                const minLake = Math.min(d1, d2, d3);
+                if (minLake < 78) return -2.2 + (minLake / 78) * 1.6;
+                return Math.min(34, (minLake - 78) * 0.11 + Math.sin(x * 0.025) * Math.cos(z * 0.025) * 4.5);
+            }
+            if (loc === 'river') {
+                // Великий річковий каньйон 3.2 км
+                const riverCenterX = Math.sin(z * 0.0065) * 145 + Math.cos(z * 0.014) * 45;
+                const distToRiver = Math.abs(x - riverCenterX);
+                if (distToRiver < 36) return -2.2;
+                const bank = Math.min(115, Math.pow((distToRiver - 36) * 0.28, 1.38));
+                return bank + Math.sin(x * 0.025 + z * 0.02) * 7.5;
+            }
+            if (loc === 'lake') {
+                // Північний фіорд 4.5 км з архіпелагом із 6 островів
+                const dist = Math.hypot(x, z);
+                const islands = [
+                    [160, -140, 62, 26], [-210, -190, 55, 22], [60, -340, 74, 34],
+                    [-120, 120, 48, 18], [280, 90, 65, 28], [-320, -40, 58, 24]
+                ];
+                for (let i = 0; i < islands.length; i++) {
+                    const [ix, iz, ir, ih] = islands[i];
+                    const idist = Math.hypot(x - ix, z - iz);
+                    if (idist < ir) return Math.cos((idist / ir) * (Math.PI / 2)) * ih - 1.5;
+                }
+                if (dist < 620) return -4.5;
+                return Math.pow((dist - 620) * 0.18, 1.38) + Math.sin(x * 0.015) * 14;
+            }
+            if (loc === 'sea') {
+                // Відкрите море 6 км з островами
+                const islands = [
+                    [0, -280, 78, 32], [320, -520, 65, 42], [-380, -440, 85, 36], [190, 180, 52, 20]
+                ];
+                for (let i = 0; i < islands.length; i++) {
+                    const [ix, iz, ir, ih] = islands[i];
+                    const idist = Math.hypot(x - ix, z - iz);
+                    if (idist < ir) return Math.cos((idist / ir) * (Math.PI / 2)) * ih - 2.0;
+                }
+                return -8.0;
+            }
+            if (loc === 'alpine') {
+                // Високогірний альпійський масив 5 км
+                const valley = Math.min(1, Math.abs(x) / 75);
+                const ridge = Math.pow(Math.hypot(x * 0.65, z * 0.55) / 140, 1.55) * 48;
+                const detail = Math.sin(x * 0.022) * Math.cos(z * 0.022) * 18 + Math.sin(x * 0.055 + z * 0.045) * 7;
+                return Math.max(0, valley * (ridge + detail));
+            }
+            if (loc === 'forest') {
+                // Національний лісовий масив 3.8 км
+                const l1 = Math.hypot(x + 95, z + 95);
+                const l2 = Math.hypot(x - 160, z + 180);
+                if (l1 < 75 || l2 < 65) return -1.8;
+                const hills = Math.sin(x * 0.014) * Math.cos(z * 0.014) * 24 + Math.cos(x * 0.032 - z * 0.028) * 9;
+                return Math.max(0, hills + 9);
+            }
+            if (loc === 'castle') {
+                // Велика гірська цитадель на плато 2.8 км
+                const dist = Math.hypot(x, z);
+                if (dist < 220) return 22;
+                return Math.max(-45, 22 - (dist - 220) * 0.35);
+            }
+            return 0;
+        }
+
+        function buildSculptedTerrain(size, segments, colorLow, colorMid, colorHigh) {
+            const geo = new THREE.PlaneGeometry(size, size, segments, segments);
+            geo.rotateX(-Math.PI / 2);
+            const posAttr = geo.attributes.position;
+            const colors = [];
+            const cLow = new THREE.Color(colorLow);
+            const cMid = new THREE.Color(colorMid);
+            const cHigh = new THREE.Color(colorHigh);
+
+            for (let i = 0; i < posAttr.count; i++) {
+                const vx = posAttr.getX(i);
+                const vz = posAttr.getZ(i);
+                const vy = getTerrainHeight(vx, vz);
+                posAttr.setY(i, vy);
+
+                const c = new THREE.Color();
+                if (vy < 4.5) c.copy(cLow).lerp(cMid, Math.max(0, (vy + 3) / 7.5));
+                else if (vy < 58) c.copy(cMid).lerp(cHigh, (vy - 4.5) / 53.5);
+                else c.copy(cHigh);
+                colors.push(c.r, c.g, c.b);
+            }
+            geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geo.computeVertexNormals();
+
+            const mat = new THREE.MeshStandardMaterial({
+                map: TEX_TERRAIN,
+                vertexColors: true,
+                roughness: 0.9,
+                metalness: 0.04
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            worldGroup.add(mesh);
+        }
+
+        function createRealisticWater(size, colorHex, yLevel) {
+            currentWaterLevel = yLevel;
+            const waterGeo = new THREE.PlaneGeometry(size, size, 96, 96);
+            waterGeo.rotateX(-Math.PI / 2);
+            const waterMat = new THREE.MeshStandardMaterial({
+                map: TEX_WATER,
+                color: colorHex,
+                roughness: 0.16,
+                metalness: 0.84,
+                transparent: true,
+                opacity: 0.93
+            });
+            activeWaterMesh = new THREE.Mesh(waterGeo, waterMat);
+            activeWaterMesh.position.y = yLevel;
+            worldGroup.add(activeWaterMesh);
+        }
+// ... existing code ... -->
+        function loadLocation(locKey) {
+            SIM_STATE.location = locKey;
+            while (worldGroup.children.length > 0) {
+                worldGroup.remove(worldGroup.children[0]);
+            }
+            animatedWorldObjects = [];
+            activeWaterMesh = null;
+            currentWaterLevel = -999;
+
+            const locTitles = {
+                pond: ['Каскад Лісових Озер', 'КАСКАД ОЗЕР (1.2 КМ)'],
+                river: ['Великий Річковий Каньйон', 'РІЧКОВИЙ КАНЬЙОН (3.2 КМ)'],
+                lake: ['Північний Фіорд та Острови', 'ПІВНІЧНИЙ ФІОРД (4.5 КМ)'],
+                sea: ['Відкрите Море та Архіпелаг', 'ВІДКРИТЕ МОРЕ (6.0 КМ)'],
+                alpine: ['Високогірний Альпійський Масив', 'АЛЬПІЙСЬКИЙ МАСИВ (5.0 КМ)'],
+                forest: ['Національний Лісовий Масив', 'НАЦІОНАЛЬНИЙ ЛІС (3.8 КМ)'],
+                castle: ['Велика Гірська Цитадель', 'ГІРСЬКА ЦИТАДЕЛЬ (2.8 КМ)'],
+                industrial: ['Індустріальний Мега-Комплекс', 'МЕГА-КОМПЛЕКС (4.0 КМ)']
+            };
+            const [fullTitle, osdTitle] = locTitles[locKey] || ['Локація', 'ЛОКАЦІЯ'];
+            document.getElementById('osd-loc-name').textContent = osdTitle;
+            document.getElementById('summary-loc').textContent = fullTitle;
+
+            if (locKey === 'pond') {
+                // 1. КАСКАД ЛІСОВИХ ОЗЕР (1200 x 1200 м, 20 КІЛЕЦЬ)
+                scene.background = new THREE.Color(0x7dd3fc);
+                scene.fog = new THREE.FogExp2(0xe0f2fe, 0.0009);
+                hemiLight.color.setHex(0xfef9c3);
+                dirLight.color.setHex(0xfef08a);
+                locationSpawnPos.set(0, 8, 95);
+
+                buildSculptedTerrain(1200, 128, 0x57534e, 0x3f6212, 0x15803d);
+                createRealisticWater(700, 0x0d9488, 0.0);
+
+                // Дерев'яні містки через протоки
+                [[0, 0, 145], [80, -70, 95], [-85, -60, 95]].forEach(([bx, bz, blen], idx) => {
+                    const bridge = new THREE.Mesh(
+                        new THREE.BoxGeometry(5.5, 0.6, blen),
+                        new THREE.MeshStandardMaterial({ map: TEX_ROCK, color: 0x78350f, roughness: 0.9 })
+                    );
+                    bridge.position.set(bx, 1.8, bz);
+                    bridge.rotation.y = idx * 0.6;
+                    worldGroup.add(bridge);
+                });
+
+                // Альтанки на берегах
+                [[82, -15], [160, -215], [-170, -195]].forEach(([gx, gz]) => {
+                    const floor = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 0.6, 8), new THREE.MeshStandardMaterial({ color: 0x78350f }));
+                    floor.position.set(gx, 1.2, gz);
+                    const roof = new THREE.Mesh(new THREE.ConeGeometry(8.5, 5.2, 8), new THREE.MeshStandardMaterial({ color: 0x991b1b }));
+                    roof.position.set(gx, 8.2, gz);
+                    worldGroup.add(floor, roof);
+                });
+
+                // Густий ліс навколо всіх 3 озер (220 дерев)
+                for (let t = 0; t < 220; t++) {
+                    const tx = Math.sin(t * 19.3) * 460;
+                    const tz = Math.cos(t * 23.7) * 460;
+                    const ty = getTerrainHeight(tx, tz);
+                    if (ty > 0.8) {
+                        if (t % 3 === 0) createPineTree(tx, ty, tz, 1.1 + (t % 4) * 0.25);
+                        else createBroadleafTree(tx, ty, tz, 1.0 + (t % 4) * 0.25);
+                    }
+                }
+
+                gateWaypoints = [
+                    [0, 6, 65], [35, 5, 25], [82, 8, -15], [125, 6, -75], [160, 5, -140],
+                    [160, 12, -215], [105, 8, -195], [45, 6, -145], [0, 5, -95], [-55, 7, -110],
+                    [-120, 6, -120], [-170, 5, -165], [-210, 11, -120], [-185, 6, -65], [-125, 5, -45],
+                    [-72, 6, -15], [-55, 5, 35], [-25, 7, 65], [0, 5, 15], [0, 8, 82]
+                ];
+
+            } else if (locKey === 'river') {
+                // 2. ВЕЛИКИЙ РІЧКОВИЙ КАНЬЙОН (3200 x 3200 м, 22 КІЛЬЦЯ)
+                scene.background = new THREE.Color(0x38bdf8);
+                scene.fog = new THREE.FogExp2(0xbae6fd, 0.00055);
+                hemiLight.color.setHex(0xe0f2fe);
+                dirLight.color.setHex(0xfffbeb);
+                locationSpawnPos.set(0, 16, 480);
+
+                buildSculptedTerrain(3200, 140, 0x57534e, 0x3f6212, 0x64748b);
+                createRealisticWater(3200, 0x0284c7, 0.0);
+
+                // 5 високих мостів через каньйон та бетонна гребля ГЕС
+                [340, 160, -20, -210, -400].forEach(bz => {
+                    const rx = Math.sin(bz * 0.0065) * 145 + Math.cos(bz * 0.014) * 45;
+                    const bridge = new THREE.Mesh(
+                        new THREE.BoxGeometry(115, 2.2, 10),
+                        new THREE.MeshStandardMaterial({ map: TEX_CONCRETE, color: 0x78350f, roughness: 0.85 })
+                    );
+                    bridge.position.set(rx, 18, bz);
+                    worldGroup.add(bridge);
+                });
+
+                // Гребля ГЕС в північній частині річки
+                const damZ = -560;
+                const damX = Math.sin(damZ * 0.0065) * 145;
+                const dam = new THREE.Mesh(
+                    new THREE.BoxGeometry(140, 42, 24),
+                    new THREE.MeshStandardMaterial({ map: TEX_CONCRETE, color: 0x94a3b8, roughness: 0.8 })
+                );
+                dam.position.set(damX, 20, damZ);
+                worldGroup.add(dam);
+
+                // Валуни та скелі в руслі + 280 сосен на схилах каньйону
+                const rockMat = new THREE.MeshStandardMaterial({ map: TEX_ROCK, color: 0x64748b, roughness: 0.92 });
+                for (let b = 0; b < 75; b++) {
+                    const bz = -650 + b * 18;
+                    const bx = Math.sin(bz * 0.0065) * 145 + Math.cos(b * 3.7) * 22;
+                    const boulder = new THREE.Mesh(new THREE.DodecahedronGeometry(3.2 + (b % 4) * 1.2, 1), rockMat);
+                    boulder.position.set(bx, 0.6, bz);
+                    worldGroup.add(boulder);
+                }
+
+                for (let t = 0; t < 280; t++) {
+                    const tz = -720 + t * 5.2;
+                    const side = t % 2 === 0 ? -1 : 1;
+                    const rx = Math.sin(tz * 0.0065) * 145;
+                    const tx = rx + side * (48 + (t % 9) * 22);
+                    const ty = getTerrainHeight(tx, tz);
+                    if (ty < 75) createPineTree(tx, ty, tz, 1.2 + (t % 4) * 0.3);
+                }
+
+                gateWaypoints = [
+                    [0, 14, 410], [85, 11, 340], [135, 16, 250], [140, 12, 160], [95, 22, 70],
+                    [20, 11, -20], [-65, 15, -110], [-135, 12, -210], [-155, 24, -305], [-115, 12, -400],
+                    [-45, 18, -485], [damX, 48, damZ], [damX + 55, 32, -470], [45, 28, -320],
+                    [-35, 35, -180], [25, 26, -50], [95, 34, 80], [115, 22, 210],
+                    [55, 28, 310], [15, 18, 390], [-15, 22, 440], [0, 16, 465]
+                ];
+
+            } else if (locKey === 'lake') {
+                // 3. ПІВНІЧНИЙ ФІОРД ТА ОСТРОВИ (4500 x 4500 м, 24 КІЛЬЦЯ)
+                scene.background = new THREE.Color(0x0284c7);
+                scene.fog = new THREE.FogExp2(0xbae6fd, 0.00038);
+                hemiLight.color.setHex(0xe0f2fe);
+                dirLight.color.setHex(0xffffff);
+                locationSpawnPos.set(0, 18, 460);
+
+                buildSculptedTerrain(4500, 140, 0x78716c, 0x15803d, 0xf8fafc);
+                createRealisticWater(4500, 0x0369a1, 0.0);
+
+                // Дерев'яні причали
+                [[0, 485], [160, -140], [-210, -190]].forEach(([dx, dz]) => {
+                    const dock = new THREE.Mesh(
+                        new THREE.BoxGeometry(8, 0.9, 65),
+                        new THREE.MeshStandardMaterial({ map: TEX_ROCK, color: 0x78350f, roughness: 0.85 })
+                    );
+                    dock.position.set(dx, 1.5, dz);
+                    worldGroup.add(dock);
+                });
+
+                // Флот із 14 вітрильних яхт і катерів на воді
+                const yachtCoords = [
+                    [-60, 280], [90, 210], [-140, 80], [110, 20], [-45, -90], [210, -40],
+                    [-260, -110], [40, -230], [190, -290], [-170, -340], [290, 210], [-290, 240]
+                ];
+                yachtCoords.forEach(([yx, yz]) => {
+                    const yacht = new THREE.Group();
+                    const hull = new THREE.Mesh(new THREE.BoxGeometry(5.5, 2.8, 18), new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 }));
+                    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 22, 8), new THREE.MeshStandardMaterial({ color: 0x94a3b8 }));
+                    mast.position.y = 11;
+                    const sail = new THREE.Mesh(new THREE.ConeGeometry(7.2, 18, 3), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+                    sail.position.set(0, 11, 2);
+                    yacht.add(hull, mast, sail);
+                    yacht.position.set(yx, 0.8, yz);
+                    yacht.rotation.y = (yx + yz) * 0.05;
+                    worldGroup.add(yacht);
+                    animatedWorldObjects.push({ mesh: yacht, type: 'bobWater', baseY: 0.8 });
+                });
+
+                // Ліси на всіх 6 островах та берегах фіорду
+                for (let i = 0; i < 240; i++) {
+                    const fx = Math.sin(i * 31.7) * 680;
+                    const fz = Math.cos(i * 27.3) * 680;
+                    const fy = getTerrainHeight(fx, fz);
+                    if (fy > 1.2 && fy < 48) {
+                        createPineTree(fx, fy, fz, 1.25 + (i % 4) * 0.3);
+                    }
+                }
+
+                gateWaypoints = [
+                    [0, 14, 380], [-60, 16, 280], [-120, 26, 120], [-140, 14, 80], [-260, 18, -110],
+                    [-210, 32, -190], [-320, 34, -40], [-170, 16, -340], [60, 44, -340], [190, 18, -290],
+                    [160, 36, -140], [210, 15, -40], [280, 38, 90], [290, 16, 210], [110, 14, 20],
+                    [-45, 16, -90], [40, 22, -230], [90, 15, 210], [140, 24, 320], [55, 18, 395],
+                    [-45, 20, 395], [-120, 16, 310], [-35, 14, 415], [0, 18, 445]
+                ];
+
+            } else if (locKey === 'sea') {
+                // 4. ВІДКРИТЕ МОРЕ ТА АРХІПЕЛАГ (6000 x 6000 м, 24 КІЛЬЦЯ)
+                scene.background = new THREE.Color(0x1d4ed8);
+                scene.fog = new THREE.FogExp2(0x93c5fd, 0.00032);
+                hemiLight.color.setHex(0xdbeafe);
+                dirLight.color.setHex(0xfef9c3);
+                locationSpawnPos.set(0, 22, 240);
+
+                buildSculptedTerrain(6000, 140, 0x334155, 0x475569, 0x15803d);
+                createRealisticWater(6000, 0x1e3a8a, 0.0);
+
+                // Два високі маяки на скелястих островах
+                [[0, -280, 68], [320, -520, 84]].forEach(([lx, lz, towerH]) => {
+                    const lighthouse = new THREE.Mesh(
+                        new THREE.CylinderGeometry(4.5, 7.2, towerH, 16),
+                        new THREE.MeshStandardMaterial({ map: TEX_CONCRETE, color: 0xf8fafc, roughness: 0.5 })
+                    );
+                    lighthouse.position.set(lx, 24 + towerH / 2, lz);
+                    const stripe = new THREE.Mesh(
+                        new THREE.CylinderGeometry(5.5, 6.2, 18, 16),
+                        new THREE.MeshStandardMaterial({ color: 0xdc2626 })
+                    );
+                    stripe.position.set(lx, 24 + towerH * 0.55, lz);
+                    const beacon = new THREE.Mesh(
+                        new THREE.CylinderGeometry(3.8, 3.8, 6, 16),
+                        new THREE.MeshBasicMaterial({ color: 0xfef08a })
+                    );
+                    beacon.position.set(lx, 24 + towerH + 3, lz);
+                    worldGroup.add(lighthouse, stripe, beacon);
+                });
+
+                // Велика морська бурова / дослідницька платформа
+                const rigGroup = new THREE.Group();
+                const deck = new THREE.Mesh(new THREE.BoxGeometry(58, 6, 58), new THREE.MeshStandardMaterial({ map: TEX_CONCRETE, color: 0xf59e0b }));
+                deck.position.y = 26;
+                rigGroup.add(deck);
+                [[-22, -22], [22, -22], [-22, 22], [22, 22]].forEach(([px, pz]) => {
+                    const leg = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.8, 32, 12), new THREE.MeshStandardMaterial({ color: 0x334155 }));
+                    leg.position.set(px, 14, pz);
+                    rigGroup.add(leg);
+                });
+                const derrick = new THREE.Mesh(new THREE.ConeGeometry(9, 44, 4), new THREE.MeshStandardMaterial({ color: 0xdc2626, wireframe: true }));
+                derrick.position.y = 50;
+                rigGroup.add(derrick);
+                rigGroup.position.set(-340, 0, -180);
+                worldGroup.add(rigGroup);
+
+                // 8 морських вітрових турбін в океані
+                [
+                    [-240, -80], [-280, -340], [-320, -600], [240, -120],
+                    [280, -380], [340, -680], [-120, -560], [140, -640]
+                ].forEach(([wx, wz]) => {
+                    const pole = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 3.2, 92, 12), new THREE.MeshStandardMaterial({ color: 0xf1f5f9 }));
+                    pole.position.set(wx, 46, wz);
+                    worldGroup.add(pole);
+
+                    const rotor = new THREE.Group();
+                    rotor.position.set(wx, 90, wz + 3.2);
+                    for (let b = 0; b < 3; b++) {
+                        const blade = new THREE.Mesh(new THREE.BoxGeometry(1.8, 36, 0.5), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+                        blade.position.y = 17;
+                        const holder = new THREE.Group();
+                        holder.rotation.z = (b * Math.PI * 2) / 3;
+                        holder.add(blade);
+                        rotor.add(holder);
+                    }
+                    worldGroup.add(rotor);
+                    animatedWorldObjects.push({ mesh: rotor, type: 'spinZ', speed: 0.85 });
+                });
+
+                // 3 морські суховантажі на курсі
+                [[180, -240], [-190, -450], [90, -520]].forEach(([sx, sz]) => {
+                    const ship = new THREE.Group();
+                    const shipHull = new THREE.Mesh(new THREE.BoxGeometry(24, 14, 105), new THREE.MeshStandardMaterial({ map: TEX_CONCRETE, color: 0x991b1b }));
+                    const bridge = new THREE.Mesh(new THREE.BoxGeometry(18, 18, 16), new THREE.MeshStandardMaterial({ color: 0xf8fafc }));
+                    bridge.position.set(0, 15, 34);
+                    ship.add(shipHull, bridge);
+                    ship.position.set(sx, 4, sz);
+                    worldGroup.add(ship);
+                    animatedWorldObjects.push({ mesh: ship, type: 'bobWater', baseY: 4.0 });
+                });
+
+                gateWaypoints = [
+                    [0, 18, 120], [-120, 22, 0], [-240, 55, -80], [-340, 42, -180], [-380, 48, -440],
+                    [-280, 62, -340], [-190, 26, -450], [-120, 58, -560], [0, 98, -280], [90, 28, -520],
+                    [140, 60, -640], [320, 112, -520], [340, 65, -680], [280, 58, -380], [180, 26, -240],
+                    [240, 55, -120], [190, 32, 180], [110, 18, 90], [0, 35, -120], [-95, 22, -260],
+                    [85, 24, -360], [145, 20, -40], [65, 18, 160], [0, 22, 215]
+                ];
+
+            } else if (locKey === 'alpine') {
+                // 5. ВИСОКОГІРНИЙ АЛЬПІЙСЬКИЙ МАСИВ (5000 x 5000 м, 24 КІЛЬЦЯ)
+                scene.background = new THREE.Color(0x60a5fa);
+                scene.fog = new THREE.FogExp2(0xbae6fd, 0.00042);
+                hemiLight.color.setHex(0xe0f2fe);
+                dirLight.color.setHex(0xfffbeb);
+                locationSpawnPos.set(0, 18, 220);
+
+                buildSculptedTerrain(5000, 140, 0x334155, 0x94a3b8, 0xf8fafc);
+
+                const rockMat = new THREE.MeshStandardMaterial({ map: TEX_ROCK, color: 0x475569, roughness: 0.92 });
+                const snowCapMat = new THREE.MeshStandardMaterial({ map: TEX_TERRAIN, color: 0xf8fafc, roughness: 0.75 });
+                for (let i = 0; i < 48; i++) {
+                    const side = i % 2 === 0 ? -1 : 1;
+                    const px = side * (165 + (i % 7) * 58);
+                    const pz = -850 + i * 36;
+                    const ph = 125 + (i % 5) * 45;
+                    const peak = new THREE.Mesh(new THREE.ConeGeometry(68, ph, 7), rockMat);
+                    peak.position.set(px, ph / 2 - 6, pz);
+                    const cap = new THREE.Mesh(new THREE.ConeGeometry(26, ph * 0.38, 7), snowCapMat);
+                    cap.position.set(px, ph * 0.82 - 6, pz);
+                    worldGroup.add(peak, cap);
+                }
+
+                // 3 підвісні мости на різній висоті через ущелину
+                [[42, 40], [68, -190], [92, -430]].forEach(([by, bz]) => {
+                    const bridgeDeck = new THREE.Mesh(new THREE.BoxGeometry(190, 2.0, 10), new THREE.MeshStandardMaterial({ color: 0x78350f }));
+                    bridgeDeck.position.set(0, by, bz);
+                    worldGroup.add(bridgeDeck);
+                    [-90, 90].forEach(px => {
+                        const pylon = new THREE.Mesh(new THREE.BoxGeometry(4.5, by + 24, 4.5), new THREE.MeshStandardMaterial({ color: 0xdc2626 }));
+                        pylon.position.set(px, (by + 24) / 2, bz);
+                        worldGroup.add(pylon);
+                    });
+                });
+
+                // 260 смерек на схилах
+                for (let t = 0; t < 260; t++) {
+                    const tx = Math.sin(t * 21.3) * 540;
+                    const tz = Math.cos(t * 17.9) * 540;
+                    if (Math.abs(tx) < 28) continue;
+                    const ty = getTerrainHeight(tx, tz);
+                    if (ty < 65) createPineTree(tx, ty, tz, 1.2 + (t % 5) * 0.3);
+                }
+
+                // 2 канатні дороги з рухомими гондолами
+                [[58, -110, 0.35], [84, -310, -0.28]].forEach(([cy, cz, spd]) => {
+                    const cabin = new THREE.Mesh(new THREE.BoxGeometry(8.5, 5.2, 5.2), new THREE.MeshStandardMaterial({ color: 0xe11d48 }));
+                    cabin.position.set(0, cy, cz);
+                    worldGroup.add(cabin);
+                    animatedWorldObjects.push({ mesh: cabin, type: 'cableCar', range: 185, speed: spd });
+                });
+
+                gateWaypoints = [
+                    [0, 18, 150], [0, 30, 40], [45, 55, -40], [0, 56, -190], [-65, 78, -260],
+                    [0, 80, -430], [85, 115, -520], [165, 145, -450], [120, 110, -310], [55, 88, -190],
+                    [-45, 92, -110], [-145, 125, -40], [-165, 130, 110], [-85, 75, 160], [-35, 34, 40],
+                    [35, 34, 40], [75, 62, -120], [35, 76, -310], [-35, 76, -310], [-75, 52, -140],
+                    [-45, 28, 80], [0, 22, 130], [25, 24, 185], [0, 18, 205]
+                ];
+
+            } else if (locKey === 'forest') {
+                // 6. НАЦІОНАЛЬНИЙ ЛІСОВИЙ МАСИВ (3800 x 3800 м, 22 КІЛЬЦЯ)
+                scene.background = new THREE.Color(0x38bdf8);
+                scene.fog = new THREE.FogExp2(0xbae6fd, 0.00048);
+                hemiLight.color.setHex(0xfef9c3);
+                dirLight.color.setHex(0xfef08a);
+                locationSpawnPos.set(0, 18, 210);
+
+                buildSculptedTerrain(3800, 140, 0x713f12, 0x15803d, 0x4d7c0f);
+                createRealisticWater(650, 0x0284c7, 0.15);
+
+                // 3 високі оглядові вежі в різних частинах лісу
+                const towerMat = new THREE.MeshStandardMaterial({ map: TEX_ROCK, color: 0x78350f, roughness: 0.85 });
+                [[85, -85, 56], [-180, -220, 64], [190, 90, 48]].forEach(([tx, tz, th]) => {
+                    [[-6, -6], [6, -6], [-6, 6], [6, 6]].forEach(([ox, oz]) => {
+                        const leg = new THREE.Mesh(new THREE.BoxGeometry(1.1, th, 1.1), towerMat);
+                        leg.position.set(tx + ox, th / 2, tz + oz);
+                        worldGroup.add(leg);
+                    });
+                    [th * 0.35, th * 0.7, th].forEach(floorY => {
+                        const platform = new THREE.Mesh(new THREE.BoxGeometry(16, 1.0, 16), towerMat);
+                        platform.position.set(tx, floorY, tz);
+                        worldGroup.add(platform);
+                    });
+                });
+
+                // 340 дерев (хвойних та листяних)
+                for (let i = 0; i < 340; i++) {
+                    const fx = Math.sin(i * 29.1) * 560;
+                    const fz = Math.cos(i * 23.7) * 560;
+                    if (Math.hypot(fx + 95, fz + 95) < 82) continue;
+                    if (Math.hypot(fx - 160, fz + 180) < 72) continue;
+                    if (Math.hypot(fx, fz - 210) < 25) continue;
+                    const fy = getTerrainHeight(fx, fz);
+                    if (i % 3 === 0) createPineTree(fx, fy, fz, 1.25 + (i % 4) * 0.3);
+                    else createBroadleafTree(fx, fy, fz, 1.15 + (i % 4) * 0.28);
+                }
+
+                gateWaypoints = [
+                    [0, 18, 140], [85, 28, -85], [85, 48, -85], [160, 14, -180], [220, 32, -260],
+                    [110, 44, -340], [-30, 38, -320], [-180, 32, -220], [-180, 56, -220], [-260, 36, -120],
+                    [-210, 22, 10], [-95, 12, -95], [-45, 28, -165], [35, 24, -140], [190, 26, 90],
+                    [190, 42, 90], [240, 28, 180], [120, 22, 230], [-60, 24, 180], [-135, 18, 95],
+                    [-55, 20, 155], [0, 18, 195]
+                ];
+
+            } else if (locKey === 'castle') {
+                // 7. ВЕЛИКА ГІРСЬКА ЦИТАДЕЛЬ (2800 x 2800 м, 22 КІЛЬЦЯ)
+                scene.background = new THREE.Color(0xfb923c);
+                scene.fog = new THREE.FogExp2(0xfed7aa, 0.00055);
+                hemiLight.color.setHex(0xffedd5);
+                dirLight.color.setHex(0xfef08a);
+                locationSpawnPos.set(0, 30, 185);
+
+                const island = new THREE.Mesh(new THREE.CylinderGeometry(225, 85, 65, 48), new THREE.MeshStandardMaterial({ map: TEX_ROCK, color: 0x334155 }));
+                island.position.y = -10;
+                const grassTop = new THREE.Mesh(new THREE.CylinderGeometry(225, 225, 2.0, 48), new THREE.MeshStandardMaterial({ map: TEX_TERRAIN, color: 0x3f6212 }));
+                grassTop.position.y = 21.8;
+                worldGroup.add(island, grassTop);
+
+                const stoneMat = new THREE.MeshStandardMaterial({ map: TEX_CONCRETE, color: 0x94a3b8, roughness: 0.78 });
+                const roofMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.65 });
+
+                // 14 веж різної висоти
+                [
+                    [-110, -130, 56], [110, -130, 56], [-135, 0, 48], [135, 0, 48],
+                    [-110, 110, 44], [110, 110, 44], [0, -165, 82], [0, -55, 68],
+                    [-55, -95, 62], [55, -95, 62], [-65, 55, 42], [65, 55, 42],
+                    [-165, -65, 52], [165, -65, 52]
+                ].forEach(([tx, tz, h]) => {
+                    const tower = new THREE.Mesh(new THREE.CylinderGeometry(8.5, 10.5, h, 16), stoneMat);
+                    tower.position.set(tx, 22 + h / 2, tz);
+                    const roof = new THREE.Mesh(new THREE.ConeGeometry(11.5, 17, 16), roofMat);
+                    roof.position.set(tx, 22 + h + 8.5, tz);
+                    worldGroup.add(tower, roof);
+                });
+
+                // Подвійний багатоарочний акведук для слалому
+                [35, -25].forEach(az => {
+                    for (let a = -5; a <= 5; a++) {
+                        const pillar = new THREE.Mesh(new THREE.BoxGeometry(4.2, 24, 5.5), stoneMat);
+                        pillar.position.set(a * 18, 34, az);
+                        worldGroup.add(pillar);
+                    }
+                    const aqueductTop = new THREE.Mesh(new THREE.BoxGeometry(195, 4.5, 6.5), stoneMat);
+                    aqueductTop.position.set(0, 47.5, az);
+                    worldGroup.add(aqueductTop);
+                });
+
+                gateWaypoints = [
+                    [0, 30, 135], [-27, 30, 35], [-45, 30, -25], [-55, 55, -95], [0, 96, -165],
+                    [55, 55, -95], [45, 30, -25], [27, 30, 35], [110, 62, 110], [135, 58, 0],
+                    [165, 64, -65], [110, 68, -130], [0, 78, -55], [-110, 68, -130], [-165, 64, -65],
+                    [-135, 58, 0], [-110, 62, 110], [-65, 45, 55], [0, 32, -25], [65, 45, 55],
+                    [45, 34, 125], [0, 30, 165]
+                ];
+
+            } else {
+                // 8. ІНДУСТРІАЛЬНИЙ МЕГА-КОМПЛЕКС (4000 x 4000 м, 24 КІЛЬЦЯ)
+                scene.background = new THREE.Color(0x0f172a);
+                scene.fog = new THREE.FogExp2(0x1e293b, 0.00048);
+                hemiLight.color.setHex(0x94a3b8);
+                dirLight.color.setHex(0xfde68a);
+                locationSpawnPos.set(0, 18, 220);
+
+                const concrete = new THREE.Mesh(
+                    new THREE.PlaneGeometry(4000, 4000),
+                    new THREE.MeshStandardMaterial({ map: TEX_CONCRETE, color: 0x334155, roughness: 0.9 })
+                );
+                concrete.rotation.x = -Math.PI / 2;
+                worldGroup.add(concrete);
+
+                const slabMat = new THREE.MeshStandardMaterial({ map: TEX_CONCRETE, color: 0x64748b });
+                const steelMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.75 });
+                const neonMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+
+                // 4 багатоповерхові відкриті цехи для прольоту всередині
+                [[0, -60], [-160, -140], [160, -140], [0, -280]].forEach(([hx, hz]) => {
+                    [16, 32, 48].forEach(floorH => {
+                        const slab = new THREE.Mesh(new THREE.BoxGeometry(92, 1.5, 64), slabMat);
+                        slab.position.set(hx, floorH, hz);
+                        worldGroup.add(slab);
+                    });
+                    [-42, -14, 14, 42].forEach(cx => {
+                        [-28, 0, 28].forEach(cz => {
+                            const col = new THREE.Mesh(new THREE.BoxGeometry(2.0, 49, 2.0), steelMat);
+                            col.position.set(hx + cx, 24.5, hz + cz);
+                            worldGroup.add(col);
+                        });
+                    });
+                });
+
+                // 6 гігантських заводських труб і градирень із неоновими кільцями
+                [
+                    [-110, -40, 115], [110, -40, 115], [-240, -260, 130],
+                    [240, -260, 130], [-95, -390, 105], [95, -390, 105]
+                ].forEach(([cx, cz, ch]) => {
+                    const chimney = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 11.5, ch, 20), new THREE.MeshStandardMaterial({ map: TEX_CONCRETE, color: 0x9a3412 }));
+                    chimney.position.set(cx, ch / 2, cz);
+                    const ring = new THREE.Mesh(new THREE.TorusGeometry(9.2, 0.45, 10, 28), neonMat);
+                    ring.rotation.x = Math.PI / 2;
+                    ring.position.set(cx, ch - 4, cz);
+                    worldGroup.add(chimney, ring);
+                });
+
+                gateWaypoints = [
+                    [0, 24, 140], [0, 24, -60], [28, 40, -60], [110, 95, -40], [160, 40, -140],
+                    [160, 24, -140], [240, 105, -260], [95, 85, -390], [0, 40, -280], [0, 24, -280],
+                    [-95, 85, -390], [-240, 105, -260], [-160, 40, -140], [-160, 24, -140], [-110, 95, -40],
+                    [-28, 40, -60], [0, 58, -60], [85, 45, 40], [140, 28, 120], [55, 22, 165],
+                    [-65, 26, 145], [-135, 32, 65], [-55, 24, 155], [0, 20, 195]
+                ];
+            }
+
+            buildRaceGates();
+            resetDrone();
+        }
+
+        // ==========================================
+        // 10. СКИДАННЯ ДРОНА ТА СПОВІЩЕННЯ
+        // ==========================================
+        let toastTimeout = null;
+        function showToast(message) {
+            const toast = document.getElementById('osd-toast');
+            if (!toast) return;
+            toast.textContent = message;
+            toast.classList.remove('hidden');
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 2200);
+        }
+
+        function resetDrone() {
+            const preset = DRONE_PRESETS[SIM_STATE.droneType] || DRONE_PRESETS.freestyle;
+            DRONE.position.copy(locationSpawnPos);
+            DRONE.velocity.set(0, 0, 0);
+            DRONE.quaternion.identity();
+
+            INPUT.throttle = 0;
+            INPUT.stickLeft.y = -1;
+            updateStickKnob('knob-left', 0, -1);
+
+            SIM_STATE.batteryVoltage = preset.baseVolt;
+            SIM_STATE.flightTimeSec = 0;
+            SIM_STATE.gatesPassed = 0;
+            SIM_STATE.raceStartTime = performance.now();
+            updateRaceHUD();
+        }
+
+        // ==========================================
+        // 11. ФІЗИКА ПОЛЬОТУ, ВІТЕР, ВОДА ТА КАМЕРА
+        // ==========================================
+        function updatePhysics(dt, elapsedSec) {
+            const safeDt = Math.min(dt, 0.05);
+
+            // Анімація об'єктів світу (лопаті, гондоли, яхти на хвилях)
+            animatedWorldObjects.forEach((obj) => {
+                if (obj.type === 'spinZ') obj.mesh.rotation.z += safeDt * obj.speed;
+                if (obj.type === 'cableCar') obj.mesh.position.x = Math.sin(elapsedSec * obj.speed) * obj.range;
+                if (obj.type === 'bobWater') {
+                    obj.mesh.position.y = obj.baseY + Math.sin(elapsedSec * 1.8 + obj.mesh.position.x) * 0.25;
+                    obj.mesh.rotation.z = Math.sin(elapsedSec * 1.4) * 0.04;
+                }
+            });
+
+            // Анімація морських хвиль
+            if (activeWaterMesh && SIM_STATE.location === 'sea') {
+                const pos = activeWaterMesh.geometry.attributes.position;
+                for (let i = 0; i < pos.count; i += 3) {
+                    const wx = pos.getX(i);
+                    const wz = pos.getZ(i);
+                    pos.setY(i, Math.sin(wx * 0.03 + elapsedSec * 1.8) * 0.65 + Math.cos(wz * 0.03 + elapsedSec * 1.4) * 0.55);
+                }
+                pos.needsUpdate = true;
+            }
+
+            const propSpeed = SIM_STATE.isMenuOpen ? 18 : (8 + INPUT.throttle * 45);
+            propMeshes.forEach((p, idx) => {
+                p.rotation.y += safeDt * propSpeed * (idx % 2 === 0 ? 1 : -1);
+            });
+
+            // Режим 3D-ангару при відкритому меню
+            if (SIM_STATE.isMenuOpen) {
+                droneMeshGroup.visible = true;
+                droneMeshGroup.position.set(0, locationSpawnPos.y + Math.sin(elapsedSec * 2) * 0.15, locationSpawnPos.z);
+                droneMeshGroup.rotation.y = elapsedSec * 0.55;
+                droneMeshGroup.rotation.x = Math.sin(elapsedSec * 1.2) * 0.06;
+
+                const camAngle = elapsedSec * 0.25;
+                camera.fov = 55;
+                camera.updateProjectionMatrix();
+                camera.position.set(
+                    droneMeshGroup.position.x + Math.sin(camAngle) * 2.5,
+                    droneMeshGroup.position.y + 0.85,
+                    droneMeshGroup.position.z + Math.cos(camAngle) * 2.5
+                );
+                camera.lookAt(droneMeshGroup.position);
+                audioEngine.update(0, 0, true);
+                return;
+            }
+
+            droneMeshGroup.visible = false;
+            processInputs(safeDt);
+
+            const preset = DRONE_PRESETS[SIM_STATE.droneType] || DRONE_PRESETS.freestyle;
+            const diffPreset = DIFFICULTY_PRESETS[SIM_STATE.difficulty] || DIFFICULTY_PRESETS.standard;
+
+            SIM_STATE.flightTimeSec += safeDt;
+            const currentDraw = 3.5 + Math.pow(INPUT.throttle, 1.8) * 48;
+            const drainScale = SIM_STATE.droneType === 'longrange' ? 0.45 : diffPreset.batteryDrainMult;
+            const minVolt = preset.baseVolt * 0.78;
+            SIM_STATE.batteryVoltage = Math.max(minVolt, SIM_STATE.batteryVoltage - currentDraw * 0.0003 * drainScale * safeDt);
+            const voltageFactor = Math.max(0.76, SIM_STATE.batteryVoltage / preset.baseVolt);
+
+            // Кутові швидкості
+            const maxRate = 5.2 * DRONE.rateScale * SIM_STATE.ratesMultiplier;
+            if (SIM_STATE.flightMode === 'ANGLE') {
+                const maxTiltRad = THREE.MathUtils.degToRad(48);
+                const euler = new THREE.Euler().setFromQuaternion(DRONE.quaternion, 'YXZ');
+                const targetPitch = -INPUT.pitch * maxTiltRad;
+                const targetRoll = -INPUT.roll * maxTiltRad;
+
+                euler.x += (targetPitch - euler.x) * Math.min(1, safeDt * 9.5);
+                euler.z += (targetRoll - euler.z) * Math.min(1, safeDt * 9.5);
+                euler.y -= INPUT.yaw * maxRate * 0.65 * safeDt;
+                DRONE.quaternion.setFromEuler(euler);
+            } else {
+                const deltaQuat = new THREE.Quaternion().setFromEuler(
+                    new THREE.Euler(
+                        -INPUT.pitch * maxRate * safeDt,
+                        -INPUT.yaw * maxRate * 0.75 * safeDt,
+                        -INPUT.roll * maxRate * safeDt,
+                        'YXZ'
+                    )
+                );
+                DRONE.quaternion.multiply(deltaQuat).normalize();
+
+                if (SIM_STATE.flightMode === 'HORIZON' && Math.abs(INPUT.pitch) < 0.08 && Math.abs(INPUT.roll) < 0.08) {
+                    const euler = new THREE.Euler().setFromQuaternion(DRONE.quaternion, 'YXZ');
+                    euler.x *= (1 - safeDt * 4.5);
+                    euler.z *= (1 - safeDt * 4.5);
+                    DRONE.quaternion.setFromEuler(euler);
+                }
+            }
+
+            // Тяга, гравітація, вітер та опір повітря
+            const droneUp = UP_VEC.clone().applyQuaternion(DRONE.quaternion);
+            const thrustForce = droneUp.multiplyScalar(
+                INPUT.throttle * DRONE.maxThrust * SIM_STATE.thrustMultiplier * voltageFactor
+            );
+            const gravityForce = new THREE.Vector3(0, -9.81 * DRONE.mass, 0);
+
+            // Поривчастий вітер (залежить від рівня складності та висоти)
+            const altWindMult = 1 + Math.min(1.5, Math.max(0, DRONE.position.y) / 60);
+            const gustX = Math.sin(elapsedSec * 0.9) * SIM_STATE.windSpeed * 0.28 * altWindMult;
+            const gustZ = Math.cos(elapsedSec * 0.7) * SIM_STATE.windSpeed * 0.22 * altWindMult;
+            const windForce = new THREE.Vector3(gustX, 0, gustZ);
+
+            const speed = DRONE.velocity.length();
+            const dragForce = DRONE.velocity.clone().multiplyScalar(-DRONE.dragCoeff * speed);
+
+            const totalAccel = thrustForce.add(gravityForce).add(dragForce).add(windForce).divideScalar(DRONE.mass);
+            DRONE.velocity.addScaledVector(totalAccel, safeDt);
+            DRONE.position.addScaledVector(DRONE.velocity, safeDt);
+
+            // Колізія із землею або водою
+            const groundH = getTerrainHeight(DRONE.position.x, DRONE.position.z);
+            const effectiveSurfaceH = Math.max(groundH, currentWaterLevel);
+            const isOverWater = currentWaterLevel > groundH && DRONE.position.y <= currentWaterLevel + DRONE.radius + 0.1;
+
+            if (DRONE.position.y < effectiveSurfaceH + DRONE.radius) {
+                const impactSpeed = Math.abs(DRONE.velocity.y);
+                if (isOverWater && !preset.canFloat) {
+                    showToast('💦 КОНТАКТ З ВОДОЮ! ПОВЕРНЕННЯ НА СТАРТ');
+                    resetDrone();
+                    return;
+                }
+                if (impactSpeed > diffPreset.crashThreshold) {
+                    showToast('💥 ЖОРСТКА ПОСАДКА! ПЕРЕЗАПУСК ДРОНА');
+                    resetDrone();
+                    return;
+                }
+                DRONE.position.y = effectiveSurfaceH + DRONE.radius;
+                if (DRONE.velocity.y < 0) {
+                    DRONE.velocity.y *= isOverWater ? -0.1 : -0.25;
+                    DRONE.velocity.x *= 0.82;
+                    DRONE.velocity.z *= 0.82;
+                }
+            }
+
+            // Позиціонування FPV камери
+            camera.position.copy(DRONE.position);
+            const tiltQuat = new THREE.Quaternion().setFromAxisAngle(
+                new THREE.Vector3(1, 0, 0),
+                THREE.MathUtils.degToRad(SIM_STATE.cameraTiltDeg)
+            );
+            camera.quaternion.copy(DRONE.quaternion).multiply(tiltQuat);
+
+            checkRaceGates();
+            updateSmokeParticles(safeDt);
+
+            const angularActivity = Math.abs(INPUT.pitch) + Math.abs(INPUT.roll) + Math.abs(INPUT.yaw);
+            audioEngine.update(INPUT.throttle, angularActivity, SIM_STATE.isMenuOpen);
+            updateOSD(effectiveSurfaceH, currentDraw);
+        }
+
+        // ==========================================
+        // 12. ОБРОБКА ВВОДУ (КЛАВІАТУРА, СТІКИ, ПУЛЬТ)
+        // ==========================================
+        function processInputs(dt) {
+            let throttleDelta = 0;
+            if (INPUT.keys['KeyW'] || INPUT.keys['Space']) throttleDelta += 0.85 * dt;
+            if (INPUT.keys['KeyS'] || INPUT.keys['ShiftLeft']) throttleDelta -= 0.85 * dt;
+
+            if (throttleDelta !== 0) {
+                INPUT.throttle = Math.max(0, Math.min(1, INPUT.throttle + throttleDelta));
+                INPUT.stickLeft.y = INPUT.throttle * 2 - 1;
+                updateStickKnob('knob-left', INPUT.stickLeft.x, INPUT.stickLeft.y);
+            }
+
+            let yawVal = INPUT.stickLeft.x;
+            if (INPUT.keys['KeyA']) yawVal -= 1;
+            if (INPUT.keys['KeyD']) yawVal += 1;
+
+            let pitchVal = INPUT.stickRight.y;
+            if (INPUT.keys['ArrowUp']) pitchVal += 1;
+            if (INPUT.keys['ArrowDown']) pitchVal -= 1;
+
+            let rollVal = INPUT.stickRight.x;
+            if (INPUT.keys['ArrowLeft']) rollVal -= 1;
+            if (INPUT.keys['ArrowRight']) rollVal += 1;
+
+            const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+            for (let i = 0; i < gamepads.length; i++) {
+                const gp = gamepads[i];
+                if (gp && gp.axes.length >= 4) {
+                    const dz = 0.06;
+                    if (Math.abs(gp.axes[0]) > dz) yawVal += gp.axes[0];
+                    if (Math.abs(gp.axes[1]) > dz) INPUT.throttle = Math.max(0, Math.min(1, (-gp.axes[1] + 1) / 2));
+                    if (Math.abs(gp.axes[2]) > dz) rollVal += gp.axes[2];
+                    if (Math.abs(gp.axes[3]) > dz) pitchVal -= gp.axes[3];
+                    break;
+                }
+            }
+
+            INPUT.yaw = Math.max(-1, Math.min(1, yawVal));
+            INPUT.pitch = Math.max(-1, Math.min(1, pitchVal));
+            INPUT.roll = Math.max(-1, Math.min(1, rollVal));
+        }
+
+        function updateStickKnob(knobId, nx, ny) {
+            const knob = document.getElementById(knobId);
+            if (!knob) return;
+            const maxOffset = 35;
+            knob.style.left = `calc(50% + ${nx * maxOffset}px)`;
+            knob.style.top = `calc(50% - ${ny * maxOffset}px)`;
+        }
+
+        function setupVirtualStick(baseId, knobId, isLeftStick) {
+            const base = document.getElementById(baseId);
+            if (!base) return;
+            let activeTouchId = null;
+
+            const handleMove = (clientX, clientY) => {
+                const rect = base.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2;
+                const cy = rect.top + rect.height / 2;
+                const maxR = rect.width / 2 - 14;
+
+                let dx = (clientX - cx) / maxR;
+                let dy = (cy - clientY) / maxR;
+                const dist = Math.hypot(dx, dy);
+                if (dist > 1) {
+                    dx /= dist;
+                    dy /= dist;
+                }
+
+                if (isLeftStick) {
+                    INPUT.stickLeft.x = dx;
+                    INPUT.stickLeft.y = dy;
+                    INPUT.throttle = Math.max(0, Math.min(1, (dy + 1) / 2));
+                } else {
+                    INPUT.stickRight.x = dx;
+                    INPUT.stickRight.y = dy;
+                }
+                updateStickKnob(knobId, dx, dy);
+            };
+
+            const handleRelease = () => {
+                activeTouchId = null;
+                if (isLeftStick) {
+                    INPUT.stickLeft.x = 0;
+                    updateStickKnob(knobId, 0, INPUT.stickLeft.y);
+                } else {
+                    INPUT.stickRight.x = 0;
+                    INPUT.stickRight.y = 0;
+                    updateStickKnob(knobId, 0, 0);
+                }
+            };
+
+            base.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const touch = e.changedTouches[0];
+                activeTouchId = touch.identifier;
+                handleMove(touch.clientX, touch.clientY);
+            }, { passive: false });
+
+            base.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === activeTouchId) {
+                        handleMove(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+                    }
+                }
+            }, { passive: false });
+
+            base.addEventListener('touchend', (e) => {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === activeTouchId) {
+                        handleRelease();
+                    }
+                }
+            });
+
+            let mouseDragging = false;
+            base.addEventListener('mousedown', (e) => {
+                mouseDragging = true;
+                handleMove(e.clientX, e.clientY);
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (mouseDragging) handleMove(e.clientX, e.clientY);
+            });
+            window.addEventListener('mouseup', () => {
+                if (mouseDragging) {
+                    mouseDragging = false;
+                    handleRelease();
+                }
+            });
+        }
+
+        setupVirtualStick('stick-left', 'knob-left', true);
+        setupVirtualStick('stick-right', 'knob-right', false);
+
+        // ==========================================
+        // 13. ОНОВЛЕННЯ BETAFLIGHT OSD ТЕЛЕМЕТРІЇ
+        // ==========================================
+        function updateOSD(surfaceH, currentDraw) {
+            if (SIM_STATE.cleanCinemaView) return;
+
+            const preset = DRONE_PRESETS[SIM_STATE.droneType] || DRONE_PRESETS.freestyle;
+            const speedKmh = Math.round(DRONE.velocity.length() * 3.6);
+            const altMeters = Math.max(0, DRONE.position.y - surfaceH - DRONE.radius).toFixed(1);
+            const distMeters = Math.round(Math.hypot(DRONE.position.x - locationSpawnPos.x, DRONE.position.z - locationSpawnPos.z));
+            const thrPct = Math.round(INPUT.throttle * 100);
+
+            document.getElementById('osd-voltage').textContent = `${SIM_STATE.batteryVoltage.toFixed(1)}V`;
+            document.getElementById('osd-amps').textContent = `${currentDraw.toFixed(1)}A`;
+            document.getElementById('osd-throttle').textContent = `${thrPct}%`;
+            document.getElementById('osd-speed').textContent = `${speedKmh} КМ/Г`;
+            document.getElementById('osd-alt').textContent = `${altMeters} м`;
+            document.getElementById('osd-dist').textContent = `${distMeters} м`;
+
+            const alertBanner = document.getElementById('osd-alert-banner');
+            if (SIM_STATE.batteryVoltage < preset.baseVolt * 0.84) {
+                alertBanner.classList.remove('hidden');
+            } else {
+                alertBanner.classList.add('hidden');
+            }
+
+            const mins = String(Math.floor(SIM_STATE.flightTimeSec / 60)).padStart(2, '0');
+            const secs = String(Math.floor(SIM_STATE.flightTimeSec % 60)).padStart(2, '0');
+            document.getElementById('osd-timer').textContent = `${mins}:${secs}`;
+
+            if (SIM_STATE.gameMode === 'race') {
+                const elapsed = ((performance.now() - SIM_STATE.raceStartTime) / 1000).toFixed(1);
+                document.getElementById('osd-race-time').textContent = `${elapsed}с`;
+            }
+
+            const euler = new THREE.Euler().setFromQuaternion(DRONE.quaternion, 'YXZ');
+            let deg = Math.round((-THREE.MathUtils.radToDeg(euler.y)) % 360);
+            if (deg < 0) deg += 360;
+            const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+            document.getElementById('osd-heading').textContent = `${String(deg).padStart(3, '0')}° ${dirs[Math.round(deg / 45) % 8]}`;
+
+            const horizonEl = document.getElementById('osd-artificial-horizon');
+            if (horizonEl) {
+                const pitchPx = THREE.MathUtils.radToDeg(euler.x) * 2.2;
+                const rollDeg = -THREE.MathUtils.radToDeg(euler.z);
+                horizonEl.setAttribute('transform', `rotate(${rollDeg}) translate(0, ${pitchPx})`);
+            }
+        }
+
+        // ==========================================
+        // 14. ОБРОБНИКИ ПОДІЙ ІНТЕРФЕЙСУ ТА ВКЛАДОК
+        // ==========================================
+        window.addEventListener('keydown', (e) => {
+            INPUT.keys[e.code] = true;
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+            if (e.code === 'KeyR') resetDrone();
+            if (e.code === 'KeyM') toggleFlightMode();
+            if (e.code === 'KeyC') toggleSmoke();
+            if (e.code === 'KeyH') toggleCleanCinemaView();
+            if (e.code === 'Escape') toggleMainMenu();
+        });
+
+        window.addEventListener('keyup', (e) => {
+            INPUT.keys[e.code] = false;
+        });
+
+        // Перемикання вкладок у меню Studio
+        document.querySelectorAll('.menu-tab').forEach(tabBtn => {
+            tabBtn.addEventListener('click', () => {
+                document.querySelectorAll('.menu-tab').forEach(b => {
+                    b.classList.remove('active', 'bg-sky-600', 'text-white');
+                    b.classList.add('text-slate-300');
+                });
+                tabBtn.classList.add('active', 'bg-sky-600', 'text-white');
+                tabBtn.classList.remove('text-slate-300');
+
+                const targetId = tabBtn.dataset.tab;
+                document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.add('hidden'));
+                document.getElementById(targetId).classList.remove('hidden');
+            });
+        });
+
+        // Фільтр локацій за масштабом
+        document.querySelectorAll('.scale-filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.scale-filter-btn').forEach(b => {
+                    b.className = 'scale-filter-btn bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg';
+                });
+                btn.className = 'scale-filter-btn bg-sky-600 text-white px-2.5 py-1 rounded-lg font-bold';
+                const filter = btn.dataset.scaleFilter;
+                document.querySelectorAll('.location-card').forEach(card => {
+                    card.style.display = (filter === 'all' || card.dataset.scale === filter) ? 'flex' : 'none';
+                });
+            });
+        });
+
+        // Вибір рівня складності
+        function selectDifficulty(diffKey) {
+            const preset = DIFFICULTY_PRESETS[diffKey] || DIFFICULTY_PRESETS.standard;
+            SIM_STATE.difficulty = diffKey;
+            SIM_STATE.windSpeed = preset.windSpeed;
+
+            document.getElementById('slider-wind').value = preset.windSpeed;
+            document.getElementById('val-wind').textContent = `${preset.windSpeed.toFixed(1)} м/с`;
+            document.getElementById('summary-diff').textContent = preset.title;
+            document.getElementById('osd-diff-badge').textContent = preset.badge;
+
+            if (preset.forcedMode) {
+                SIM_STATE.flightMode = preset.forcedMode;
+                updateFlightModeUI();
+            }
+            buildRaceGates();
+        }
+
+        document.querySelectorAll('.diff-card').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.diff-card').forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+                selectDifficulty(card.dataset.diff);
+            });
+        });
+
+        function toggleFlightMode() {
+            const modes = ['ANGLE', 'HORIZON', 'ACRO'];
+            SIM_STATE.flightMode = modes[(modes.indexOf(SIM_STATE.flightMode) + 1) % modes.length];
+            updateFlightModeUI();
+            showToast(`РЕЖИМ ПОЛЬОТУ: ${SIM_STATE.flightMode}`);
+        }
+
+        function updateFlightModeUI() {
+            const m = SIM_STATE.flightMode;
+            document.getElementById('btn-mode-label').textContent = m;
+            const labels = {
+                ANGLE: 'ANGLE • STABILIZED',
+                HORIZON: 'HORIZON • HYBRID ACRO',
+                ACRO: 'ACRO • FULL MANUAL'
+            };
+            document.getElementById('osd-flight-mode-text').textContent = labels[m];
+
+            const activeCls = 'bg-emerald-600/90 text-white font-bold py-2.5 px-2 rounded-xl text-xs border border-emerald-400 transition';
+            const inactiveCls = 'bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 px-2 rounded-xl text-xs border border-slate-700 transition';
+
+            document.getElementById('select-flight-angle').className = m === 'ANGLE' ? activeCls : inactiveCls;
+            document.getElementById('select-flight-horizon').className = m === 'HORIZON' ? activeCls : inactiveCls;
+            document.getElementById('select-flight-acro').className = m === 'ACRO' ? activeCls : inactiveCls;
+        }
+
+        function toggleSmoke() {
+            SIM_STATE.smokeEnabled = !SIM_STATE.smokeEnabled;
+            document.getElementById('btn-toggle-smoke').classList.toggle('bg-fuchsia-600', SIM_STATE.smokeEnabled);
+            showToast(SIM_STATE.smokeEnabled ? '💨 КОЛЬОРОВИЙ ДИМ УВІМКНЕНО' : 'ДИМ ВИМКНЕНО');
+        }
+
+        function toggleCleanCinemaView() {
+            SIM_STATE.cleanCinemaView = !SIM_STATE.cleanCinemaView;
+            document.getElementById('fpv-hud').classList.toggle('hidden', SIM_STATE.cleanCinemaView);
+            document.getElementById('btn-restore-hud').classList.toggle('hidden', !SIM_STATE.cleanCinemaView);
+        }
+
+        function toggleMainMenu(forceState) {
+            SIM_STATE.isMenuOpen = typeof forceState === 'boolean' ? forceState : !SIM_STATE.isMenuOpen;
+            const modal = document.getElementById('main-menu-modal');
+            if (SIM_STATE.isMenuOpen) {
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+                camera.fov = SIM_STATE.fovDeg;
+                camera.updateProjectionMatrix();
+                audioEngine.init();
+            }
+        }
+
+        document.getElementById('btn-toggle-smoke').addEventListener('click', toggleSmoke);
+        document.getElementById('btn-toggle-cinema').addEventListener('click', toggleCleanCinemaView);
+        document.getElementById('btn-restore-hud').addEventListener('click', toggleCleanCinemaView);
+        document.getElementById('btn-toggle-mode').addEventListener('click', toggleFlightMode);
+        document.getElementById('btn-reset-drone').addEventListener('click', () => {
+            resetDrone();
+            showToast('ДРОН СКИНУТО • БАТАРЕЯ 100%');
+        });
+        document.getElementById('btn-open-menu').addEventListener('click', () => toggleMainMenu(true));
+        document.getElementById('btn-start-flight').addEventListener('click', () => toggleMainMenu(false));
+
+        document.querySelectorAll('.drone-card').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.drone-card').forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+                selectDroneModel(card.dataset.drone);
+            });
+        });
+
+        document.querySelectorAll('.location-card').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.location-card').forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+                loadLocation(card.dataset.loc);
+            });
+        });
+
+        document.querySelectorAll('#led-color-picker button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#led-color-picker button').forEach(b => {
+                    b.classList.remove('ring-2', 'ring-white', 'scale-110');
+                    b.classList.add('opacity-75');
+                });
+                btn.classList.add('ring-2', 'ring-white', 'scale-110');
+                btn.classList.remove('opacity-75');
+                SIM_STATE.ledColor = btn.dataset.color;
+                build3DDroneMesh(SIM_STATE.droneType, SIM_STATE.ledColor);
+            });
+        });
+
+        document.getElementById('select-gamemode-free').addEventListener('click', (e) => {
+            SIM_STATE.gameMode = 'free';
+            e.target.className = 'bg-sky-600 text-white font-bold py-2.5 px-3 rounded-xl text-xs border border-sky-400 transition';
+            document.getElementById('select-gamemode-race').className = 'bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-700 transition';
+            updateGatesVisibility();
+            updateRaceHUD();
+        });
+
+        document.getElementById('select-gamemode-race').addEventListener('click', (e) => {
+            SIM_STATE.gameMode = 'race';
+            e.target.className = 'bg-sky-600 text-white font-bold py-2.5 px-3 rounded-xl text-xs border border-sky-400 transition';
+            document.getElementById('select-gamemode-free').className = 'bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-700 transition';
+            resetDrone();
+            updateGatesVisibility();
+            updateRaceHUD();
+        });
+
+        document.getElementById('select-flight-angle').addEventListener('click', () => {
+            SIM_STATE.flightMode = 'ANGLE';
+            updateFlightModeUI();
+        });
+        document.getElementById('select-flight-horizon').addEventListener('click', () => {
+            SIM_STATE.flightMode = 'HORIZON';
+            updateFlightModeUI();
+        });
+        document.getElementById('select-flight-acro').addEventListener('click', () => {
+            SIM_STATE.flightMode = 'ACRO';
+            updateFlightModeUI();
+        });
+
+        document.getElementById('slider-cam-tilt').addEventListener('input', (e) => {
+            SIM_STATE.cameraTiltDeg = parseInt(e.target.value, 10);
+            document.getElementById('val-cam-tilt').textContent = `${SIM_STATE.cameraTiltDeg}°`;
+            document.getElementById('osd-cam-angle').textContent = `CAM ${SIM_STATE.cameraTiltDeg}°`;
+        });
+
+        document.getElementById('slider-rates').addEventListener('input', (e) => {
+            SIM_STATE.ratesMultiplier = parseFloat(e.target.value);
+            document.getElementById('val-rates').textContent = `${SIM_STATE.ratesMultiplier.toFixed(1)}x`;
+        });
+
+        document.getElementById('slider-thrust').addEventListener('input', (e) => {
+            const pct = parseInt(e.target.value, 10);
+            SIM_STATE.thrustMultiplier = pct / 100;
+            document.getElementById('val-thrust').textContent = `${pct}%`;
+        });
+
+        document.getElementById('slider-fov').addEventListener('input', (e) => {
+            SIM_STATE.fovDeg = parseInt(e.target.value, 10);
+            document.getElementById('val-fov').textContent = `${SIM_STATE.fovDeg}°`;
+            if (!SIM_STATE.isMenuOpen) {
+                camera.fov = SIM_STATE.fovDeg;
+                camera.updateProjectionMatrix();
+            }
+        });
+
+        document.getElementById('slider-wind').addEventListener('input', (e) => {
+            SIM_STATE.windSpeed = parseFloat(e.target.value);
+            document.getElementById('val-wind').textContent = `${SIM_STATE.windSpeed.toFixed(1)} м/с`;
+        });
+
+        document.getElementById('chk-virtual-sticks').addEventListener('change', (e) => {
+            document.getElementById('virtual-sticks-container').style.display = e.target.checked ? 'flex' : 'none';
+        });
+
+        document.getElementById('chk-analog-fx').addEventListener('change', (e) => {
+            document.getElementById('fpv-vignette').style.display = e.target.checked ? 'block' : 'none';
+            document.getElementById('fpv-scanlines').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        document.getElementById('btn-audio-toggle').addEventListener('click', (e) => {
+            SIM_STATE.audioEnabled = !SIM_STATE.audioEnabled;
+            e.target.textContent = SIM_STATE.audioEnabled ? '🔊 ЗВУК: УВІМК' : '🔇 ЗВУК: ВИМК';
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ==========================================
+        // 15. ГОЛОВНИЙ ЦИКЛ АНІМАЦІЇ ТА ЗАПУСК
+        // ==========================================
+        let lastFrameTime = performance.now();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const now = performance.now();
+            const dt = (now - lastFrameTime) / 1000;
+            const elapsedSec = now / 1000;
+            lastFrameTime = now;
+
+            updatePhysics(dt, elapsedSec);
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function () {
+            loadLocation('alpine');
+            selectDroneModel('freestyle');
+            selectDifficulty('standard');
+            animate();
+        };
+    </script>
+</body>
+</html>
